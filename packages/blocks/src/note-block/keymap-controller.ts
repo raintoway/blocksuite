@@ -1,6 +1,7 @@
 import type { BlockSelection, UIEventHandler } from '@blocksuite/block-std';
 import { assertExists } from '@blocksuite/global/utils';
-import type { BlockElement, EditorHost } from '@blocksuite/lit';
+import type { EditorHost } from '@blocksuite/lit';
+import { type BlockElement } from '@blocksuite/lit';
 import type { ReactiveController } from 'lit';
 import type { ReactiveControllerHost } from 'lit';
 
@@ -8,8 +9,7 @@ import { moveBlockConfigs } from '../_common/configs/move-block.js';
 import { quickActionConfig } from '../_common/configs/quick-action/config.js';
 import { textConversionConfigs } from '../_common/configs/text-conversion.js';
 import { buildPath } from '../_common/utils/index.js';
-import { onModelElementUpdated } from '../page-block/utils/callback.js';
-import { updateBlockElementType } from '../page-block/utils/operations/element/block-level.js';
+import { onModelElementUpdated } from '../root-block/utils/callback.js';
 import { ensureBlockInContainer } from './utils.js';
 
 export class KeymapController implements ReactiveController {
@@ -51,12 +51,8 @@ export class KeymapController implements ReactiveController {
     this.host.bindHotKey({
       ArrowDown: this._onArrowDown,
       ArrowUp: this._onArrowUp,
-      ArrowLeft: this._onArrowLeft,
-      ArrowRight: this._onArrowRight,
       'Shift-ArrowDown': this._onShiftArrowDown,
       'Shift-ArrowUp': this._onShiftArrowUp,
-      'Shift-ArrowLeft': this._onShiftArrowLeft,
-      'Shift-ArrowRight': this._onShiftArrowRight,
       Escape: this._onEsc,
       Enter: this._onEnter,
       'Mod-a': this._onSelectAll,
@@ -68,56 +64,19 @@ export class KeymapController implements ReactiveController {
   };
 
   private _onArrowDown = () => {
-    return this._std.command
-      .pipe()
+    const [result] = this._std.command
+      .chain()
       .inline((_, next) => {
         this._reset();
         return next();
       })
       .try(cmd => [
-        // text selection
-        this._onTextDown(cmd),
-
         // block selection - select the next block
         this._onBlockDown(cmd),
       ])
       .run();
-  };
 
-  private _onTextDown = (cmd: BlockSuite.CommandChain) => {
-    return cmd
-      .getTextSelection()
-      .inline<'currentSelectionPath' | 'focusBlock'>((ctx, next) => {
-        const textSelection = ctx.currentTextSelection;
-        assertExists(textSelection);
-        const end = textSelection.end;
-        return next({
-          currentSelectionPath: end.path,
-          focusBlock: ctx.std.view.viewFromPath('block', end.path),
-        });
-      })
-      .try(cmd => [
-        // text selection - case 1: move cursor down within the same block
-        cmd.moveCursorVertically({ forward: false }),
-
-        cmd
-          .getNextBlock({
-            filter: block => !!block.model.text,
-          })
-          .inline<'focusBlock'>((ctx, next) =>
-            next({ focusBlock: ctx.nextBlock })
-          )
-          .try(cmd => [
-            // text selection - case 2: move cursor down to the next block
-            cmd.moveCursorVertically({ forward: false }),
-
-            // text selection - case 3: move cursor to the next block start
-            cmd.moveCursorToBlock({ tail: false }),
-          ]),
-
-        // text selection - case 4: move cursor to the current block end
-        cmd.moveCursorToBlock({ tail: true }),
-      ]);
+    return result;
   };
 
   private _onBlockDown = (cmd: BlockSuite.CommandChain) => {
@@ -149,56 +108,19 @@ export class KeymapController implements ReactiveController {
   };
 
   private _onArrowUp = () => {
-    return this._std.command
-      .pipe()
+    const [result] = this._std.command
+      .chain()
       .inline((_, next) => {
         this._reset();
         return next();
       })
       .try(cmd => [
-        // text selection
-        this._onTextUp(cmd),
-
         // block selection - select the previous block
         this._onBlockUp(cmd),
       ])
       .run();
-  };
 
-  private _onTextUp = (cmd: BlockSuite.CommandChain) => {
-    return cmd
-      .getTextSelection()
-      .inline<'currentSelectionPath' | 'focusBlock'>((ctx, next) => {
-        const textSelection = ctx.currentTextSelection;
-        assertExists(textSelection);
-        const end = textSelection.end;
-        return next({
-          currentSelectionPath: end.path,
-          focusBlock: ctx.std.view.viewFromPath('block', end.path),
-        });
-      })
-      .try(cmd => [
-        // text selection - case 1: move cursor up within the same block
-        cmd.moveCursorVertically({ forward: true }),
-
-        cmd
-          .getPrevBlock({
-            filter: block => !!block.model.text,
-          })
-          .inline<'focusBlock'>((ctx, next) =>
-            next({ focusBlock: ctx.prevBlock })
-          )
-          .try(cmd => [
-            // text selection - case 2: move cursor up to the previous block
-            cmd.moveCursorVertically({ forward: true }),
-
-            // text selection - case 3: move cursor to the previous block end
-            cmd.moveCursorToBlock({ tail: true }),
-          ]),
-
-        // text selection - case 4: move cursor to the current block start
-        cmd.moveCursorToBlock({ tail: false }),
-      ]);
+    return result;
   };
 
   private _onBlockUp = (cmd: BlockSuite.CommandChain) => {
@@ -229,105 +151,16 @@ export class KeymapController implements ReactiveController {
       .selectBlock();
   };
 
-  private _onArrowLeft = () => {
-    return this._std.command
-      .pipe()
-      .inline((_, next) => {
-        this._reset();
-        return next();
-      })
-      .getTextSelection()
-      .inline<'currentSelectionPath'>((ctx, next) => {
-        const textSelection = ctx.currentTextSelection;
-        assertExists(textSelection);
-        return next({ currentSelectionPath: textSelection.from.path });
-      })
-      .getPrevBlock({
-        filter: block => !!block.model.text,
-      })
-      .inline((ctx, next) => {
-        return next({ focusBlock: ctx.prevBlock });
-      })
-      .selectBlockTextBySide({ tail: true })
-      .run();
-  };
-
-  private _onArrowRight = () => {
-    return this._std.command
-      .pipe()
-      .inline((_, next) => {
-        this._reset();
-        return next();
-      })
-      .getTextSelection()
-      .inline<'currentSelectionPath'>((ctx, next) => {
-        const textSelection = ctx.currentTextSelection;
-        assertExists(textSelection);
-        const end = textSelection.to ?? textSelection.from;
-        return next({ currentSelectionPath: end.path });
-      })
-      .getNextBlock({
-        filter: block => !!block.model.text,
-      })
-      .inline((ctx, next) => {
-        return next({ focusBlock: ctx.nextBlock });
-      })
-      .selectBlockTextBySide({ tail: false })
-      .run();
-  };
-
   private _onShiftArrowDown = () => {
-    return this._std.command
-      .pipe()
+    const [result] = this._std.command
+      .chain()
       .try(cmd => [
-        // text selection
-        this._onTextShiftDown(cmd),
-
         // block selection
         this._onBlockShiftDown(cmd),
       ])
       .run();
-  };
 
-  private _onTextShiftDown = (cmd: BlockSuite.CommandChain) => {
-    return cmd
-      .getTextSelection()
-      .inline<'currentSelectionPath' | 'focusBlock'>((ctx, next) => {
-        const textSelection = ctx.currentTextSelection;
-        assertExists(textSelection);
-        const end = textSelection.end;
-        return next({
-          currentSelectionPath: end.path,
-          focusBlock: ctx.std.view.viewFromPath('block', end.path),
-        });
-      })
-      .try(cmd => [
-        // text selection - case 1: change selection downwards within the same block
-        cmd.changeTextSelectionVertically({ upward: false }),
-
-        cmd
-          .getNextBlock({
-            filter: block => !!block.model.text,
-          })
-          .inline((ctx, next) => {
-            return next({ focusBlock: ctx.nextBlock });
-          })
-          .try(cmd => [
-            // text selection - case 2: change selection downwards to the next block
-            cmd.changeTextSelectionVertically({ upward: false }),
-
-            // text selection - case 3: change selection downwards to the next block start
-            cmd.changeTextSelectionToBlockStartEnd({ tail: false }),
-          ]),
-
-        // text selection - case 4: change selection to the current block end
-        cmd.changeTextSelectionToBlockStartEnd({ tail: true }),
-      ])
-      .inline((ctx, next) => {
-        const { focusBlock } = ctx;
-        this._focusBlock = focusBlock ?? null;
-        return next();
-      });
+    return result;
   };
 
   private _onBlockShiftDown = (cmd: BlockSuite.CommandChain) => {
@@ -370,57 +203,15 @@ export class KeymapController implements ReactiveController {
   };
 
   private _onShiftArrowUp = () => {
-    return this._std.command
-      .pipe()
+    const [result] = this._std.command
+      .chain()
       .try(cmd => [
-        // text selection
-        this._onTextShiftUp(cmd),
-
         // block selection
         this._onBlockShiftUp(cmd),
       ])
       .run();
-  };
 
-  private _onTextShiftUp = (cmd: BlockSuite.CommandChain) => {
-    return cmd
-      .getTextSelection()
-      .inline<'currentSelectionPath' | 'focusBlock'>((ctx, next) => {
-        const textSelection = ctx.currentTextSelection;
-        assertExists(textSelection);
-        const end = textSelection.end;
-        return next({
-          currentSelectionPath: end.path,
-          focusBlock: ctx.std.view.viewFromPath('block', end.path),
-        });
-      })
-      .try(cmd => [
-        // text selection - case 1: change selection upwards within the same block
-        cmd.changeTextSelectionVertically({ upward: true }),
-
-        cmd
-          .getPrevBlock({
-            filter: block => !!block.model.text,
-          })
-          .inline((ctx, next) => {
-            return next({ focusBlock: ctx.prevBlock });
-          })
-          .try(cmd => [
-            // text selection - case 2: change selection upwards to the previous block
-            cmd.changeTextSelectionVertically({ upward: true }),
-
-            // text selection - case 3: change selection upwards to the previous block end
-            cmd.changeTextSelectionToBlockStartEnd({ tail: true }),
-          ]),
-
-        // text selection - case 4: change selection to the current block start
-        cmd.changeTextSelectionToBlockStartEnd({ tail: false }),
-      ])
-      .inline((ctx, next) => {
-        const { focusBlock } = ctx;
-        this._focusBlock = focusBlock ?? null;
-        return next();
-      });
+    return result;
   };
 
   private _onBlockShiftUp = (cmd: BlockSuite.CommandChain) => {
@@ -461,78 +252,9 @@ export class KeymapController implements ReactiveController {
       .selectBlocksBetween({ tail: false });
   };
 
-  private _onShiftArrowRight = () => {
-    return this._std.command
-      .pipe()
-      .getTextSelection()
-      .inline<'currentSelectionPath' | 'focusBlock'>((ctx, next) => {
-        const textSelection = ctx.currentTextSelection;
-        assertExists(textSelection);
-        const end = textSelection.end;
-        return next({
-          currentSelectionPath: end.path,
-          focusBlock: ctx.std.view.viewFromPath('block', end.path),
-        });
-      })
-      .try(cmd => [
-        // text selection - case 1: change selection towards right within the same block
-        cmd.changeTextSelectionSideways({ left: false }),
-
-        // text selection - case 2: change selection towards right to the next block
-        cmd
-          .getNextBlock({
-            filter: block => !!block.model.text,
-          })
-          .inline<'focusBlock'>((ctx, next) => {
-            return next({ focusBlock: ctx.nextBlock });
-          })
-          .changeTextSelectionSidewaysToBlock({ left: false }),
-      ])
-      .inline((ctx, next) => {
-        const { focusBlock } = ctx;
-        this._focusBlock = focusBlock ?? null;
-        return next();
-      })
-      .run();
-  };
-
-  private _onShiftArrowLeft = () => {
-    return this._std.command
-      .pipe()
-      .getTextSelection()
-      .inline<'currentSelectionPath' | 'focusBlock'>((ctx, next) => {
-        const textSelection = ctx.currentTextSelection;
-        assertExists(textSelection);
-        const end = textSelection.end;
-        return next({
-          currentSelectionPath: end.path,
-          focusBlock: ctx.std.view.viewFromPath('block', end.path),
-        });
-      })
-      .try(cmd => [
-        // text selection - case 1: change selection towards left within the same block
-        cmd.changeTextSelectionSideways({ left: true }),
-        // text selection - case 2: change selection towards left to the next block
-        cmd
-          .getPrevBlock({
-            filter: block => !!block.model.text,
-          })
-          .inline<'focusBlock'>((ctx, next) => {
-            return next({ focusBlock: ctx.prevBlock });
-          })
-          .changeTextSelectionSidewaysToBlock({ left: true }),
-      ])
-      .inline((ctx, next) => {
-        const { focusBlock } = ctx;
-        this._focusBlock = focusBlock ?? null;
-        return next();
-      })
-      .run();
-  };
-
   private _onEsc = () => {
-    return this._std.command
-      .pipe()
+    const [result] = this._std.command
+      .chain()
       .getBlockSelections()
       .inline((ctx, next) => {
         const blockSelection = ctx.currentBlockSelections?.at(-1);
@@ -547,11 +269,13 @@ export class KeymapController implements ReactiveController {
         return next();
       })
       .run();
+
+    return result;
   };
 
   private _onEnter = () => {
-    return this._std.command
-      .pipe()
+    const [result] = this._std.command
+      .chain()
       .getBlockSelections()
       .inline((ctx, next) => {
         const blockSelection = ctx.currentBlockSelections?.at(-1);
@@ -559,7 +283,7 @@ export class KeymapController implements ReactiveController {
           return;
         }
 
-        const { view, page, selection } = ctx.std;
+        const { view, doc, selection } = ctx.std;
 
         const element = view.viewFromPath('block', blockSelection.path);
         if (!element) {
@@ -567,21 +291,16 @@ export class KeymapController implements ReactiveController {
         }
 
         const { model } = element;
-        const parent = page.getParent(model);
+        const parent = doc.getParent(model);
         if (!parent) {
           return;
         }
 
         const index = parent.children.indexOf(model) ?? undefined;
 
-        const blockId = page.addBlock(
-          'affine:paragraph',
-          {},
-          parent,
-          index + 1
-        );
+        const blockId = doc.addBlock('affine:paragraph', {}, parent, index + 1);
 
-        const sel = selection.getInstance('text', {
+        const sel = selection.create('text', {
           from: {
             path: element.parentPath.concat(blockId),
             index: 0,
@@ -590,17 +309,20 @@ export class KeymapController implements ReactiveController {
           to: null,
         });
 
-        selection.setGroup('note', [sel]);
+        requestAnimationFrame(() => selection.setGroup('note', [sel]));
 
         return next();
       })
       .run();
+
+    return result;
   };
 
   private _onSelectAll: UIEventHandler = ctx => {
     ctx.get('defaultState').event.preventDefault();
     const view = this._std.view;
     const selection = this._std.selection;
+    // eslint-disable-next-line unicorn/prefer-array-some
     if (!selection.find('block')) {
       return;
     }
@@ -619,7 +341,7 @@ export class KeymapController implements ReactiveController {
           )
       ) {
         blocks.push(
-          selection.getInstance('block', {
+          selection.create('block', {
             path: nodeView.path,
           })
         );
@@ -654,56 +376,48 @@ export class KeymapController implements ReactiveController {
           [key]: ctx => {
             ctx.get('defaultState').event.preventDefault();
 
-            return this._std.command
-              .pipe()
-              .withHost()
-              .tryAll(chain => [
-                chain.getTextSelection(),
-                chain.getBlockSelections(),
-              ])
-              .getSelectedBlocks({
-                types: ['text', 'block'],
+            const [result] = this._std.command
+              .chain()
+              .updateBlockType({
+                flavour: item.flavour,
+                props: {
+                  type: item.type,
+                },
               })
               .inline((ctx, next) => {
-                const { selectedBlocks } = ctx;
-                assertExists(selectedBlocks);
-
-                const newModels = updateBlockElementType(
-                  selectedBlocks,
-                  item.flavour,
-                  item.type
-                );
+                const newModels = ctx.updatedBlocks;
+                const host = ctx.std.host as EditorHost;
+                assertExists(newModels);
+                assertExists(host);
 
                 if (item.flavour !== 'affine:code') {
                   return;
                 }
 
                 const [codeModel] = newModels;
-                onModelElementUpdated(
-                  this._std.host as EditorHost,
-                  codeModel,
-                  () => {
-                    const codeElement = this._std.view.viewFromPath(
-                      'block',
-                      buildPath(codeModel)
-                    );
-                    assertExists(codeElement);
-                    this._std.selection.setGroup('note', [
-                      this._std.selection.getInstance('text', {
-                        from: {
-                          path: codeElement.path,
-                          index: 0,
-                          length: codeModel.text?.length ?? 0,
-                        },
-                        to: null,
-                      }),
-                    ]);
-                  }
-                ).catch(console.error);
+                onModelElementUpdated(host, codeModel, () => {
+                  const codeElement = this._std.view.viewFromPath(
+                    'block',
+                    buildPath(codeModel)
+                  );
+                  assertExists(codeElement);
+                  this._std.selection.setGroup('note', [
+                    this._std.selection.create('text', {
+                      from: {
+                        path: codeElement.path,
+                        index: 0,
+                        length: codeModel.text?.length ?? 0,
+                      },
+                      to: null,
+                    }),
+                  ]);
+                }).catch(console.error);
 
                 next();
               })
               .run();
+
+            return result;
           },
         });
       });

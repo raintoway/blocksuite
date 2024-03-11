@@ -16,6 +16,7 @@ import {
   pasteByKeyboard,
   pressArrowLeft,
   pressArrowUp,
+  pressBackspace,
   pressEnter,
   pressEnterWithShortkey,
   pressShiftTab,
@@ -29,9 +30,12 @@ import {
   updateBlockType,
 } from './utils/actions/index.js';
 import {
+  assertBlockCount,
+  assertBlockSelections,
   assertRichTextInlineRange,
   assertRichTexts,
   assertStoreMatchJSX,
+  assertTitle,
 } from './utils/asserts.js';
 import { test } from './utils/playwright.js';
 
@@ -98,6 +102,7 @@ test('use markdown syntax can create code block', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -141,6 +146,7 @@ test('use markdown syntax can create code block', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -395,6 +401,7 @@ test.skip('use keyboard copy inside code block copy', async ({ page }) => {
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -449,6 +456,7 @@ test.fixme(
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -598,7 +606,9 @@ test('press backspace inside should select code block', async ({ page }) => {
   await initEmptyCodeBlockState(page);
   await focusRichText(page);
   const codeBlock = page.locator('affine-code');
-  const selectedRects = page.locator('affine-block-selection');
+  const selectedRects = page
+    .locator('affine-block-selection')
+    .locator('visible=true');
   await page.keyboard.press('Backspace');
   await expect(selectedRects).toHaveCount(1);
   await expect(codeBlock).toBeVisible();
@@ -607,7 +617,7 @@ test('press backspace inside should select code block', async ({ page }) => {
   await expect(codeBlock).toBeHidden();
 });
 
-test('press backspace after code block can enter code block', async ({
+test('press backspace after code block can select code block', async ({
   page,
 }) => {
   await enterPlaygroundRoom(page);
@@ -616,14 +626,13 @@ test('press backspace after code block can enter code block', async ({
   const code = 'const a = 1;';
   await type(page, code);
 
+  await assertRichTextInlineRange(page, 0, 12);
   await pressEnterWithShortkey(page);
-  await page.keyboard.press('Backspace');
-
-  const index = await getInlineSelectionIndex(page);
-  expect(index).toBe(code.length);
-
-  const text = await getInlineSelectionText(page);
-  expect(text).toBe(code);
+  await assertRichTextInlineRange(page, 1, 0);
+  await assertBlockCount(page, 'paragraph', 1);
+  await pressBackspace(page);
+  await assertBlockSelections(page, [['0', '1', '2']]);
+  await assertBlockCount(page, 'paragraph', 0);
 });
 
 test('press ArrowUp after code block can enter code block', async ({
@@ -639,7 +648,7 @@ test('press ArrowUp after code block can enter code block', async ({
   await page.keyboard.press('ArrowUp');
 
   const index = await getInlineSelectionIndex(page);
-  expect(index).toBe(code.length);
+  expect(index).toBe(0);
 
   const text = await getInlineSelectionText(page);
   expect(text).toBe(code);
@@ -843,4 +852,25 @@ test('auto scroll horizontally when typing', async ({ page }) => {
   });
 
   expect(richTextScrollLeft2).toEqual(richTextScrollLeft1);
+});
+
+test('code hotkey should not effect in global', async ({ page }) => {
+  await enterPlaygroundRoom(page);
+  await initEmptyParagraphState(page);
+  await focusRichText(page);
+
+  await pressEnter(page);
+  await type(page, '``` ');
+
+  await assertTitle(page, '');
+  await assertBlockCount(page, 'paragraph', 1);
+  await assertBlockCount(page, 'code', 1);
+
+  await pressArrowUp(page);
+  await pressBackspace(page);
+  await type(page, 'aaa');
+
+  await assertTitle(page, 'aaa');
+  await assertBlockCount(page, 'paragraph', 0);
+  await assertBlockCount(page, 'code', 1);
 });

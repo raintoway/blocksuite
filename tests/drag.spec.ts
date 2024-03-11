@@ -1,7 +1,6 @@
+import { BLOCK_CHILDREN_CONTAINER_PADDING_LEFT } from '@blocks/_common/consts.js';
 import { expect } from '@playwright/test';
 
-// eslint-disable-next-line @typescript-eslint/no-restricted-imports
-import { BLOCK_CHILDREN_CONTAINER_PADDING_LEFT } from '../packages/blocks/src/_common/consts.js';
 import {
   dragBetweenCoords,
   dragBetweenIndices,
@@ -16,7 +15,10 @@ import {
   pressTab,
   type,
 } from './utils/actions/index.js';
-import { getBoundingClientRect } from './utils/actions/misc.js';
+import {
+  getBoundingClientRect,
+  getEditorHostLocator,
+} from './utils/actions/misc.js';
 import {
   assertBlockChildrenIds,
   assertRichTexts,
@@ -193,6 +195,7 @@ test('move to the last block of each level in multi-level nesting', async ({
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -263,6 +266,7 @@ test('move to the last block of each level in multi-level nesting', async ({
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -339,6 +343,7 @@ test('move to the last block of each level in multi-level nesting', async ({
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -416,6 +421,7 @@ test('move to the last block of each level in multi-level nesting', async ({
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -519,7 +525,9 @@ test('should be able to drag & drop multiple blocks', async ({ page }) => {
     }
   );
 
-  const blockSelections = page.locator('affine-block-selection');
+  const blockSelections = page
+    .locator('affine-block-selection')
+    .locator('visible=true');
   await expect(blockSelections).toHaveCount(2);
 
   await dragHandleFromBlockToBlockBottomById(page, '2', '4', true);
@@ -562,6 +570,7 @@ test('should be able to drag & drop multiple blocks to nested block', async ({
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -634,7 +643,9 @@ test('should be able to drag & drop multiple blocks to nested block', async ({
     }
   );
 
-  const blockSelections = page.locator('affine-block-selection');
+  const blockSelections = page
+    .locator('affine-block-selection')
+    .locator('visible=true');
   await expect(blockSelections).toHaveCount(2);
 
   await dragHandleFromBlockToBlockBottomById(page, '3', '8');
@@ -645,6 +656,7 @@ test('should be able to drag & drop multiple blocks to nested block', async ({
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -766,7 +778,9 @@ test('should create preview when dragging', async ({ page }) => {
     }
   );
 
-  const blockSelections = page.locator('affine-block-selection');
+  const blockSelections = page
+    .locator('affine-block-selection')
+    .locator('visible=true');
   await expect(blockSelections).toHaveCount(2);
 
   await dragHandleFromBlockToBlockBottomById(
@@ -801,10 +815,13 @@ test('should drag and drop blocks under block-level selection', async ({
     }
   );
 
-  const blockSelections = page.locator('affine-block-selection');
+  const blockSelections = page
+    .locator('affine-block-selection')
+    .locator('visible=true');
   await expect(blockSelections).toHaveCount(2);
 
-  const editors = page.locator('rich-text');
+  const editorHost = getEditorHostLocator(page);
+  const editors = editorHost.locator('rich-text');
   const editorRect0 = await editors.nth(0).boundingBox();
   const editorRect2 = await editors.nth(2).boundingBox();
   if (!editorRect0 || !editorRect2) {
@@ -849,11 +866,14 @@ test('should trigger click event on editor container when clicking on blocks und
     }
   );
 
-  const blockSelections = page.locator('affine-block-selection');
+  const blockSelections = page
+    .locator('affine-block-selection')
+    .locator('visible=true');
   await expect(blockSelections).toHaveCount(2);
   await expect(page.locator('*:focus')).toHaveCount(0);
 
-  const editors = page.locator('rich-text');
+  const editorHost = getEditorHostLocator(page);
+  const editors = editorHost.locator('rich-text');
   const editorRect0 = await editors.nth(0).boundingBox();
   if (!editorRect0) {
     throw new Error();
@@ -880,7 +900,8 @@ test('should get to selected block when dragging unselected block', async ({
   await type(page, '456');
   await assertRichTexts(page, ['123', '456']);
 
-  const editors = page.locator('rich-text');
+  const editorHost = getEditorHostLocator(page);
+  const editors = editorHost.locator('rich-text');
   const editorRect0 = await editors.nth(0).boundingBox();
   const editorRect1 = await editors.nth(1).boundingBox();
 
@@ -892,7 +913,9 @@ test('should get to selected block when dragging unselected block', async ({
   await page.mouse.down();
   await page.mouse.up();
 
-  const blockSelections = page.locator('affine-block-selection');
+  const blockSelections = page
+    .locator('affine-block-selection')
+    .locator('visible=true');
   await expect(blockSelections).toHaveCount(1);
 
   await page.mouse.move(editorRect1.x - 5, editorRect0.y);
@@ -922,7 +945,8 @@ test('should clear the currently selected block when clicked again', async ({
   await type(page, '456');
   await assertRichTexts(page, ['123', '456']);
 
-  const editors = page.locator('rich-text');
+  const editorHost = getEditorHostLocator(page);
+  const editors = editorHost.locator('rich-text');
   const editorRect0 = await editors.nth(0).boundingBox();
   const editorRect1 = await editors.nth(1).boundingBox();
 
@@ -942,7 +966,9 @@ test('should clear the currently selected block when clicked again', async ({
   await page.mouse.down();
   await page.mouse.up();
 
-  const blockSelections = page.locator('affine-block-selection');
+  const blockSelections = page
+    .locator('affine-block-selection')
+    .locator('visible=true');
   await expect(blockSelections).toHaveCount(1);
 
   let selectedBlockRect = await blockSelections.nth(0).boundingBox();
@@ -974,25 +1000,25 @@ test('should clear the currently selected block when clicked again', async ({
 test('should support moving blocks from multiple notes', async ({ page }) => {
   await enterPlaygroundRoom(page);
   await page.evaluate(() => {
-    const { page } = window;
+    const { doc } = window;
 
-    const pageId = page.addBlock('affine:page', {
-      title: new page.Text(),
+    const rootId = doc.addBlock('affine:page', {
+      title: new doc.Text(),
     });
-    page.addBlock('affine:surface', {}, pageId);
+    doc.addBlock('affine:surface', {}, rootId);
 
     ['123', '456', '789', '987', '654', '321'].forEach(text => {
-      const noteId = page.addBlock('affine:note', {}, pageId);
-      page.addBlock(
+      const noteId = doc.addBlock('affine:note', {}, rootId);
+      doc.addBlock(
         'affine:paragraph',
         {
-          text: new page.Text(text),
+          text: new doc.Text(text),
         },
         noteId
       );
     });
 
-    page.resetHistory();
+    doc.resetHistory();
   });
 
   await dragBetweenIndices(
@@ -1006,10 +1032,13 @@ test('should support moving blocks from multiple notes', async ({ page }) => {
     }
   );
 
-  const blockSelections = page.locator('affine-block-selection');
+  const blockSelections = page
+    .locator('affine-block-selection')
+    .locator('visible=true');
   await expect(blockSelections).toHaveCount(2);
 
-  const editors = page.locator('rich-text');
+  const editorHost = getEditorHostLocator(page);
+  const editors = editorHost.locator('rich-text');
   const editorRect1 = await editors.nth(1).boundingBox();
   const editorRect3 = await editors.nth(3).boundingBox();
   if (!editorRect1 || !editorRect3) {

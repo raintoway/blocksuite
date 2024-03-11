@@ -1,9 +1,10 @@
+import { isEqual } from '@blocksuite/global/utils';
 import type { DeltaInsert } from '@blocksuite/inline';
 import type {
   FromBlockSnapshotPayload,
   FromBlockSnapshotResult,
-  FromPageSnapshotPayload,
-  FromPageSnapshotResult,
+  FromDocSnapshotPayload,
+  FromDocSnapshotResult,
   FromSliceSnapshotPayload,
   FromSliceSnapshotResult,
 } from '@blocksuite/store';
@@ -11,7 +12,7 @@ import { type AssetsManager, getAssetName, sha } from '@blocksuite/store';
 import { ASTWalker, BaseAdapter } from '@blocksuite/store';
 import {
   type BlockSnapshot,
-  type PageSnapshot,
+  type DocSnapshot,
   type SliceSnapshot,
 } from '@blocksuite/store';
 import { nanoid } from '@blocksuite/store';
@@ -19,6 +20,7 @@ import rehypeParse from 'rehype-parse';
 import { unified } from 'unified';
 
 import { getTagColor } from '../components/tags/colors.js';
+import { NoteDisplayMode } from '../types.js';
 import { getFilenameFromContentDisposition } from '../utils/header-value-parser.js';
 import {
   hastGetElementChildren,
@@ -27,6 +29,7 @@ import {
   hastQuerySelector,
   type HtmlAST,
 } from './hast.js';
+import { fetchImage } from './utils.js';
 
 export type NotionHtml = string;
 
@@ -40,14 +43,14 @@ type NotionHtmlToSliceSnapshotPayload = {
   pageId: string;
 };
 
-type NotionHtmlToPageSnapshotPayload = {
+type NotionHtmlToDocSnapshotPayload = {
   file: NotionHtml;
   assets?: AssetsManager;
   pageId?: string;
   pageMap?: Map<string, string>;
 };
 
-type NotionHtmlToBlockSnapshotPayload = NotionHtmlToPageSnapshotPayload;
+type NotionHtmlToBlockSnapshotPayload = NotionHtmlToDocSnapshotPayload;
 
 const ColumnClassMap: Record<string, string> = {
   typesSelect: 'select',
@@ -79,9 +82,9 @@ type BlocksuiteTableRow = {
 };
 
 export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
-  override fromPageSnapshot(
-    _payload: FromPageSnapshotPayload
-  ): Promise<FromPageSnapshotResult<NotionHtml>> {
+  override fromDocSnapshot(
+    _payload: FromDocSnapshotPayload
+  ): Promise<FromDocSnapshotResult<NotionHtml>> {
     throw new Error('Method not implemented.');
   }
   override fromBlockSnapshot(
@@ -94,34 +97,35 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
   ): Promise<FromSliceSnapshotResult<NotionHtml>> {
     throw new Error('Method not implemented.');
   }
-  override async toPageSnapshot(
-    payload: NotionHtmlToPageSnapshotPayload
-  ): Promise<PageSnapshot> {
+  override async toDocSnapshot(
+    payload: NotionHtmlToDocSnapshotPayload
+  ): Promise<DocSnapshot> {
     const notionHtmlAst = this._htmlToAst(payload.file);
     const titleAst = hastQuerySelector(notionHtmlAst, 'title');
     const blockSnapshotRoot = {
       type: 'block',
-      id: nanoid('block'),
+      id: nanoid(),
       flavour: 'affine:note',
       props: {
         xywh: '[0,0,800,95]',
         background: '--affine-background-secondary-color',
         index: 'a0',
         hidden: false,
+        displayMode: NoteDisplayMode.DocAndEdgeless,
       },
       children: [],
     };
     return {
       type: 'page',
       meta: {
-        id: payload.pageId ?? nanoid('page'),
+        id: payload.pageId ?? nanoid(),
         title: hastGetTextContent(titleAst, 'Untitled'),
-        createDate: +new Date(),
+        createDate: Date.now(),
         tags: [],
       },
       blocks: {
         type: 'block',
-        id: nanoid('block'),
+        id: nanoid(),
         flavour: 'affine:page',
         props: {
           title: {
@@ -137,7 +141,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
         children: [
           {
             type: 'block',
-            id: nanoid('block'),
+            id: nanoid(),
             flavour: 'affine:surface',
             props: {
               elements: {},
@@ -160,13 +164,14 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
     const notionHtmlAst = this._htmlToAst(payload.file);
     const blockSnapshotRoot = {
       type: 'block',
-      id: nanoid('block'),
+      id: nanoid(),
       flavour: 'affine:note',
       props: {
         xywh: '[0,0,800,95]',
         background: '--affine-background-secondary-color',
         index: 'a0',
         hidden: false,
+        displayMode: NoteDisplayMode.DocAndEdgeless,
       },
       children: [],
     };
@@ -179,30 +184,32 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
   }
   override async toSliceSnapshot(
     payload: NotionHtmlToSliceSnapshotPayload
-  ): Promise<SliceSnapshot> {
+  ): Promise<SliceSnapshot | null> {
     const notionHtmlAst = this._htmlToAst(payload.file);
     const blockSnapshotRoot = {
       type: 'block',
-      id: nanoid('block'),
+      id: nanoid(),
       flavour: 'affine:note',
       props: {
         xywh: '[0,0,800,95]',
         background: '--affine-background-secondary-color',
         index: 'a0',
         hidden: false,
+        displayMode: NoteDisplayMode.DocAndEdgeless,
       },
       children: [],
     };
+    const contentSlice = (await this._traverseNotionHtml(
+      notionHtmlAst,
+      blockSnapshotRoot as BlockSnapshot,
+      payload.assets
+    )) as BlockSnapshot;
+    if (contentSlice.children.length === 0) {
+      return null;
+    }
     return {
       type: 'slice',
-      content: [
-        await this._traverseNotionHtml(
-          notionHtmlAst,
-          blockSnapshotRoot as BlockSnapshot,
-          payload.assets
-        ),
-      ],
-      blockVersions: payload.blockVersions,
+      content: [contentSlice],
       pageVersion: payload.pageVersion,
       workspaceVersion: payload.workspaceVersion,
       workspaceId: payload.workspaceId,
@@ -254,15 +261,20 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
                 }
               });
             } else {
-              const res = await fetch(imageURL);
+              const res = await fetchImage(
+                imageURL,
+                undefined,
+                this.configs.get('imageProxy') as string
+              );
               const clonedRes = res.clone();
               const name =
                 getFilenameFromContentDisposition(
                   res.headers.get('Content-Disposition') ?? ''
                 ) ??
                 imageURL.split('/').at(-1) ??
-                'image' + res.headers.get('Content-Type')?.split('/').at(-1) ??
-                '.png';
+                'image' +
+                  '.' +
+                  (res.headers.get('Content-Type')?.split('/').at(-1) ?? 'png');
               const file = new File([await res.blob()], name);
               blobId = await sha(await clonedRes.arrayBuffer());
               assets?.getAssets().set(blobId, file);
@@ -272,7 +284,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
               .openNode(
                 {
                   type: 'block',
-                  id: nanoid('block'),
+                  id: nanoid(),
                   flavour: 'affine:image',
                   props: {
                     sourceId: blobId,
@@ -295,12 +307,12 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
           const codeText =
             code.children.length === 1 && code.children[0].type === 'text'
               ? code.children[0]
-              : code;
+              : { ...code, tag: 'div' };
           context
             .openNode(
               {
                 type: 'block',
-                id: nanoid('block'),
+                id: nanoid(),
                 flavour: 'affine:code',
                 props: {
                   language: 'Plain Text',
@@ -323,7 +335,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
             .openNode(
               {
                 type: 'block',
-                id: nanoid('block'),
+                id: nanoid(),
                 flavour: 'affine:paragraph',
                 props: {
                   type: 'quote',
@@ -351,7 +363,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
           context.openNode(
             {
               type: 'block',
-              id: nanoid('block'),
+              id: nanoid(),
               flavour: 'affine:paragraph',
               props: {
                 type: context.getGlobalContext('hast:blockquote')
@@ -378,7 +390,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
             .openNode(
               {
                 type: 'block',
-                id: nanoid('block'),
+                id: nanoid(),
                 flavour: 'affine:paragraph',
                 props: {
                   type: o.node.tagName,
@@ -416,7 +428,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
           context.openNode(
             {
               type: 'block',
-              id: nanoid('block'),
+              id: nanoid(),
               flavour: 'affine:list',
               props: {
                 type: listType,
@@ -456,7 +468,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
             .openNode(
               {
                 type: 'block',
-                id: nanoid('block'),
+                id: nanoid(),
                 flavour: 'affine:divider',
                 props: {},
                 children: [],
@@ -473,7 +485,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
               .openNode(
                 {
                   type: 'block',
-                  id: nanoid('block'),
+                  id: nanoid(),
                   flavour: 'affine:paragraph',
                   props: {
                     type: 'text',
@@ -496,7 +508,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
               .openNode(
                 {
                   type: 'block',
-                  id: nanoid('block'),
+                  id: nanoid(),
                   flavour: 'affine:paragraph',
                   props: {
                     type: 'text',
@@ -532,7 +544,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
               .openNode(
                 {
                   type: 'block',
-                  id: nanoid('block'),
+                  id: nanoid(),
                   flavour: 'affine:bookmark',
                   props: {
                     type: 'card',
@@ -572,15 +584,19 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
                 }
               });
             } else {
-              const res = await fetch(imageURL);
+              const res = await fetchImage(
+                imageURL,
+                undefined,
+                this.configs.get('imageProxy') as string
+              );
               const clonedRes = res.clone();
               const name =
                 getFilenameFromContentDisposition(
                   res.headers.get('Content-Disposition') ?? ''
                 ) ??
-                imageURL.split('/').at(-1) ??
-                'image' + res.headers.get('Content-Type')?.split('/').at(-1) ??
-                '.png';
+                (imageURL.split('/').at(-1) ?? 'image') +
+                  '.' +
+                  (res.headers.get('Content-Type')?.split('/').at(-1) ?? 'png');
               const file = new File([await res.blob()], name);
               blobId = await sha(await clonedRes.arrayBuffer());
               assets?.getAssets().set(blobId, file);
@@ -590,7 +606,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
               .openNode(
                 {
                   type: 'block',
-                  id: nanoid('block'),
+                  id: nanoid(),
                   flavour: 'affine:image',
                   props: {
                     sourceId: blobId,
@@ -635,9 +651,10 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
                 getFilenameFromContentDisposition(
                   res.headers.get('Content-Disposition') ?? ''
                 ) ??
-                embededURL.split('/').at(-1) ??
-                'file' + res.headers.get('Content-Type')?.split('/').at(-1) ??
-                '.blob';
+                (embededURL.split('/').at(-1) ?? 'file') +
+                  '.' +
+                  (res.headers.get('Content-Type')?.split('/').at(-1) ??
+                    'blob');
               const file = new File([await res.blob()], name);
               size = file.size;
               type = file.type;
@@ -649,7 +666,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
               .openNode(
                 {
                   type: 'block',
-                  id: nanoid('block'),
+                  id: nanoid(),
                   flavour: 'affine:attachment',
                   props: {
                     name,
@@ -668,7 +685,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
           break;
         }
         case 'th': {
-          const columnId = nanoid('unknown');
+          const columnId = nanoid();
           const columnTypeClass = hastQuerySelector(o.node, 'svg')?.properties
             ?.className;
           const columnType = Array.isArray(columnTypeClass)
@@ -698,7 +715,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
                   'hast:table:children',
                   {
                     type: 'block',
-                    id: nanoid('block'),
+                    id: nanoid(),
                     flavour: 'affine:paragraph',
                     props: {
                       text: {
@@ -735,7 +752,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
                     );
                     const id = filteredArray?.length
                       ? filteredArray[0].id
-                      : nanoid('unknown');
+                      : nanoid();
                     if (!filteredArray?.length) {
                       columns[index].data.options?.push({
                         id,
@@ -778,7 +795,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
         }
       }
     });
-    walker.setLeave(async (o, context) => {
+    walker.setLeave((o, context) => {
       if (o.node.type !== 'element') {
         return;
       }
@@ -847,18 +864,18 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
                   row[columnId].value = (row[columnId].value as string[])[0];
                 }
               });
-              cells[children.at(i)?.id ?? nanoid('block')] = row;
+              cells[children.at(i)?.id ?? nanoid()] = row;
             });
           context.setGlobalContextStack('hast:table:cells', []);
           context.openNode(
             {
               type: 'block',
-              id: nanoid('block'),
+              id: nanoid(),
               flavour: 'affine:database',
               props: {
                 views: [
                   {
-                    id: nanoid('block'),
+                    id: nanoid(),
                     name: 'Table View',
                     mode: 'table',
                     columns: [],
@@ -897,7 +914,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
     return walker.walk(html, snapshot);
   };
 
-  private _hastToDelta = (
+  private _hastToDeltaSpreaded = (
     ast: HtmlAST,
     option: {
       trim?: boolean;
@@ -928,12 +945,12 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
           }
           case 'span': {
             return ast.children.flatMap(child =>
-              this._hastToDelta(child, option)
+              this._hastToDeltaSpreaded(child, option)
             );
           }
           case 'strong': {
             return ast.children.flatMap(child =>
-              this._hastToDelta(child, option).map(delta => {
+              this._hastToDeltaSpreaded(child, option).map(delta => {
                 delta.attributes = { ...delta.attributes, bold: true };
                 return delta;
               })
@@ -941,7 +958,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
           }
           case 'em': {
             return ast.children.flatMap(child =>
-              this._hastToDelta(child, option).map(delta => {
+              this._hastToDeltaSpreaded(child, option).map(delta => {
                 delta.attributes = { ...delta.attributes, italic: true };
                 return delta;
               })
@@ -949,7 +966,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
           }
           case 'code': {
             return ast.children.flatMap(child =>
-              this._hastToDelta(child, option).map(delta => {
+              this._hastToDeltaSpreaded(child, option).map(delta => {
                 delta.attributes = { ...delta.attributes, code: true };
                 return delta;
               })
@@ -957,7 +974,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
           }
           case 'del': {
             return ast.children.flatMap(child =>
-              this._hastToDelta(child, option).map(delta => {
+              this._hastToDeltaSpreaded(child, option).map(delta => {
                 delta.attributes = { ...delta.attributes, strike: true };
                 return delta;
               })
@@ -965,7 +982,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
           }
           case 'u': {
             return ast.children.flatMap(child =>
-              this._hastToDelta(child, option).map(delta => {
+              this._hastToDeltaSpreaded(child, option).map(delta => {
                 delta.attributes = { ...delta.attributes, underline: true };
                 return delta;
               })
@@ -977,7 +994,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
               return [];
             }
             return ast.children.flatMap(child =>
-              this._hastToDelta(child, option).map(delta => {
+              this._hastToDeltaSpreaded(child, option).map(delta => {
                 if (option.pageMap) {
                   const pageId = option.pageMap.get(decodeURIComponent(href));
                   if (pageId) {
@@ -1006,7 +1023,7 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
           case 'mark': {
             // TODO: add support for highlight
             return ast.children.flatMap(child =>
-              this._hastToDelta(child, option).map(delta => {
+              this._hastToDeltaSpreaded(child, option).map(delta => {
                 delta.attributes = { ...delta.attributes };
                 return delta;
               })
@@ -1016,7 +1033,31 @@ export class NotionHtmlAdapter extends BaseAdapter<NotionHtml> {
       }
     }
     return 'children' in ast
-      ? ast.children.flatMap(child => this._hastToDelta(child, option))
+      ? ast.children.flatMap(child => this._hastToDeltaSpreaded(child, option))
       : [];
+  };
+
+  private _hastToDelta = (
+    ast: HtmlAST,
+    option: {
+      trim?: boolean;
+      pageMap?: Map<string, string>;
+    } = { trim: true }
+  ): DeltaInsert<object>[] => {
+    return this._hastToDeltaSpreaded(ast, option).reduce((acc, cur) => {
+      if (acc.length === 0) {
+        return [cur];
+      }
+      const last = acc[acc.length - 1];
+      if (
+        typeof last.insert === 'string' &&
+        typeof cur.insert === 'string' &&
+        isEqual(last.attributes, cur.attributes)
+      ) {
+        last.insert += cur.insert;
+        return acc;
+      }
+      return [...acc, cur];
+    }, [] as DeltaInsert<object>[]);
   };
 }

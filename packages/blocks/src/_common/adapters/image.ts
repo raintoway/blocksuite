@@ -2,23 +2,23 @@ import type { AssetsManager } from '@blocksuite/store';
 import {
   BaseAdapter,
   type BlockSnapshot,
+  type DocSnapshot,
   type FromBlockSnapshotPayload,
   type FromBlockSnapshotResult,
-  type FromPageSnapshotPayload,
-  type FromPageSnapshotResult,
+  type FromDocSnapshotPayload,
+  type FromDocSnapshotResult,
   type FromSliceSnapshotPayload,
   type FromSliceSnapshotResult,
   nanoid,
-  type PageSnapshot,
   sha,
   type SliceSnapshot,
   type ToBlockSnapshotPayload,
-  type ToPageSnapshotPayload,
+  type ToDocSnapshotPayload,
 } from '@blocksuite/store';
 
 export type Image = File[];
 
-type PngToSliceSnapshotPayload = {
+type ImageToSliceSnapshotPayload = {
   file: Image;
   assets?: AssetsManager;
   blockVersions: Record<string, number>;
@@ -29,9 +29,9 @@ type PngToSliceSnapshotPayload = {
 };
 
 export class ImageAdapter extends BaseAdapter<Image> {
-  override fromPageSnapshot(
-    _payload: FromPageSnapshotPayload
-  ): Promise<FromPageSnapshotResult<Image>> {
+  override fromDocSnapshot(
+    _payload: FromDocSnapshotPayload
+  ): Promise<FromDocSnapshotResult<Image>> {
     throw new Error('Method not implemented.');
   }
   override fromBlockSnapshot(
@@ -48,16 +48,20 @@ export class ImageAdapter extends BaseAdapter<Image> {
         const { flavour, props } = contentSlice;
         if (flavour === 'affine:image') {
           const { sourceId } = props;
-          const file = payload.assets?.getAssets().get(sourceId as string);
-          images.push(file as File);
+          const file = payload.assets?.getAssets().get(sourceId as string) as
+            | File
+            | undefined;
+          if (file) {
+            images.push(file);
+          }
         }
       }
     }
     return Promise.resolve({ file: images, assetsIds: [] });
   }
-  override toPageSnapshot(
-    _payload: ToPageSnapshotPayload<Image>
-  ): Promise<PageSnapshot> {
+  override toDocSnapshot(
+    _payload: ToDocSnapshotPayload<Image>
+  ): Promise<DocSnapshot> {
     throw new Error('Method not implemented.');
   }
   override toBlockSnapshot(
@@ -66,8 +70,8 @@ export class ImageAdapter extends BaseAdapter<Image> {
     throw new Error('Method not implemented.');
   }
   override async toSliceSnapshot(
-    payload: PngToSliceSnapshotPayload
-  ): Promise<SliceSnapshot> {
+    payload: ImageToSliceSnapshotPayload
+  ): Promise<SliceSnapshot | null> {
     const content: SliceSnapshot['content'] = [];
     for (const item of payload.file) {
       const blobId = await sha(await item.arrayBuffer());
@@ -76,17 +80,19 @@ export class ImageAdapter extends BaseAdapter<Image> {
       content.push({
         type: 'block',
         flavour: 'affine:image',
-        id: nanoid('block'),
+        id: nanoid(),
         props: {
           sourceId: blobId,
         },
         children: [],
       });
     }
+    if (content.length === 0) {
+      return null;
+    }
     return {
       type: 'slice',
       content,
-      blockVersions: payload.blockVersions,
       pageVersion: payload.pageVersion,
       workspaceVersion: payload.workspaceVersion,
       workspaceId: payload.workspaceId,

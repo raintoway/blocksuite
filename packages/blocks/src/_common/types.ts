@@ -1,26 +1,30 @@
 import { type Slot } from '@blocksuite/global/utils';
-import { type BaseBlockModel, type Page } from '@blocksuite/store';
+import { type BlockModel, type Doc } from '@blocksuite/store';
 
-import type { DataViewDataType } from '../database-block/common/data-view.js';
-import type { Cell } from '../database-block/index.js';
-import type { Column } from '../database-block/table/types.js';
-import type { FrameBlockModel } from '../frame-block/index.js';
-import type { ImageBlockModel } from '../image-block/index.js';
-import type { BookmarkBlockModel } from '../models.js';
-import type { NoteBlockModel } from '../note-block/index.js';
-import { type ShapeStyle } from '../surface-block/consts.js';
-import {
-  type BrushElement,
-  type CanvasElement,
-  type ConnectorElement,
-  type ConnectorMode,
-  type GroupElement,
-  type ShapeType,
-} from '../surface-block/elements/index.js';
-import type { RefNodeSlots } from './components/rich-text/inline/nodes/reference-node.js';
-import type { AffineTextAttributes } from './components/rich-text/inline/types.js';
+import type { BookmarkBlockModel } from '../bookmark-block/bookmark-model.js';
+import type { EmbedFigmaModel } from '../embed-figma-block/embed-figma-model.js';
+import type { EmbedGithubModel } from '../embed-github-block/embed-github-model.js';
+import type { EmbedHtmlModel } from '../embed-html-block/embed-html-model.js';
+import type { EmbedLinkedDocModel } from '../embed-linked-doc-block/embed-linked-doc-model.js';
+import type { EmbedLoomModel } from '../embed-loom-block/embed-loom-model.js';
+import type { EmbedSyncedDocModel } from '../embed-synced-doc-block/embed-synced-doc-model.js';
+import type { EmbedYoutubeModel } from '../embed-youtube-block/embed-youtube-model.js';
+import type { FrameBlockModel } from '../frame-block/frame-model.js';
+import type { ImageBlockModel } from '../image-block/image-model.js';
+import type { NoteBlockModel } from '../note-block/note-model.js';
+import type { EdgelessModel } from '../root-block/edgeless/type.js';
+import type {
+  ConnectorElementModel,
+  ConnectorMode,
+} from '../surface-block/element-model/connector.js';
+import { type CanvasElement } from '../surface-block/element-model/index.js';
+import type {
+  BrushElementModel,
+  GroupElementModel,
+  ShapeType,
+} from '../surface-block/index.js';
 import type { NavigatorMode } from './edgeless/frame/consts.js';
-import type { CssVariableName } from './theme/css-variables.js';
+import type { RefNodeSlots } from './inline/presets/nodes/reference-node/reference-node.js';
 import type { BlockComponent } from './utils/query.js';
 import type { Point } from './utils/rect.js';
 
@@ -31,15 +35,9 @@ export interface IPoint {
   y: number;
 }
 
-export interface BlockTransformContext {
-  childText?: string;
-  begin?: number;
-  end?: number;
-}
-
 export interface EditingState {
   element: BlockComponent;
-  model: BaseBlockModel;
+  model: BlockModel;
   rect: DOMRect;
 }
 
@@ -113,37 +111,47 @@ export type CommonSlots = RefNodeSlots;
 
 type EditorMode = 'page' | 'edgeless';
 type EditorSlots = {
-  pageModeSwitched: Slot<EditorMode>;
-  pageUpdated: Slot<{ newPageId: string }>;
+  editorModeSwitched: Slot<EditorMode>;
+  docUpdated: Slot<{ newDocId: string }>;
 };
 
 export type AbstractEditor = {
-  page: Page;
+  doc: Doc;
   mode: EditorMode;
   readonly slots: CommonSlots & EditorSlots;
 } & HTMLElement;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ExtendedModel = BaseBlockModel & Record<string, any>;
+export type ExtendedModel = BlockModel & Record<string, any>;
 
 // blocks that would only appear under the edgeless container root
 export type TopLevelBlockModel =
   | NoteBlockModel
   | FrameBlockModel
   | ImageBlockModel
-  | BookmarkBlockModel;
+  | BookmarkBlockModel
+  | EmbedGithubModel
+  | EmbedYoutubeModel
+  | EmbedFigmaModel
+  | EmbedLinkedDocModel
+  | EmbedSyncedDocModel
+  | EmbedHtmlModel
+  | EmbedLoomModel;
 
-export type EdgelessElement = TopLevelBlockModel | CanvasElement;
+export type { EdgelessModel as EdgelessModel };
 
-export type Alignable = EdgelessElement;
+export type Alignable = EdgelessModel;
 
-export type Selectable = EdgelessElement;
+export type Selectable = EdgelessModel;
 
-export type Erasable = EdgelessElement;
+export type Erasable = EdgelessModel;
 
 export type Connectable =
   | TopLevelBlockModel
-  | Exclude<CanvasElement, ConnectorElement | BrushElement | GroupElement>;
+  | Exclude<
+      CanvasElement,
+      ConnectorElementModel | BrushElementModel | GroupElementModel
+    >;
 
 export type DefaultTool = {
   type: 'default';
@@ -151,17 +159,7 @@ export type DefaultTool = {
 
 export type ShapeTool = {
   type: 'shape';
-  shape: ShapeType | 'roundedRect';
-  fillColor: CssVariableName;
-  strokeColor: CssVariableName;
-  shapeStyle: ShapeStyle;
-};
-
-export type ShapeToolState = {
-  shape: ShapeType | 'roundedRect';
-  fillColor: string;
-  strokeColor: string;
-  shapeStyle: ShapeStyle;
+  shapeType: ShapeType | 'roundedRect';
 };
 
 export enum LineWidth {
@@ -179,13 +177,10 @@ export enum LineWidth {
 
 export type TextTool = {
   type: 'text';
-  color: CssVariableName;
 };
 
 export type BrushTool = {
   type: 'brush';
-  color: CssVariableName;
-  lineWidth: LineWidth;
 };
 
 export type EraserTool = {
@@ -219,18 +214,21 @@ export type NoteChildrenFlavour =
   | 'affine:surface-ref';
 
 export type NoteTool = {
-  type: 'note';
-  background: CssVariableName;
+  type: 'affine:note';
   childFlavour: NoteChildrenFlavour;
   childType: string | null;
   tip: string;
 };
 
+export enum NoteDisplayMode {
+  DocAndEdgeless = 'both',
+  EdgelessOnly = 'edgeless',
+  DocOnly = 'doc',
+}
+
 export type ConnectorTool = {
   type: 'connector';
   mode: ConnectorMode;
-  color: CssVariableName;
-  strokeWidth: LineWidth;
 };
 
 export type EdgelessTool =
@@ -245,55 +243,29 @@ export type EdgelessTool =
   | FrameTool
   | FrameNavigatorTool;
 
-/** @deprecated */
-export type SerializedBlock = {
-  id?: string;
-  flavour: string;
-  type?: string;
-  text?: {
-    insert?: string;
-    delete?: number;
-    retain?: number;
-    attributes?: AffineTextAttributes;
-  }[];
-  rawText?: {
-    insert: string;
-    delete?: number;
-    retain?: number;
-  }[];
-  checked?: boolean;
-  children: SerializedBlock[];
-  sourceId?: string;
-  caption?: string;
-  name?: string;
-  size?: number;
-  width?: number;
-  height?: number;
-  language?: string;
-  databaseProps?: {
-    id: string;
-    title: string;
-    rowIds: string[];
-    cells: Record<string, Record<string, Cell>>;
-    columns: Column[];
-    views?: DataViewDataType[];
-  };
-  // note block
-  xywh?: string;
-  // bookmark block
-  style?: string;
-  title?: string;
-  description?: string;
-  icon?: string;
-  image?: string;
-  url?: string;
-  crawled?: boolean;
-  background?: string;
-  rotate?: number;
-  hidden?: boolean;
-  edgeless?: Record<string, Record<string, unknown> | unknown>;
-};
-
 export type EmbedBlockDoubleClickData = {
   blockId: string;
 };
+
+export interface Viewport {
+  left: number;
+  top: number;
+  scrollLeft: number;
+  scrollTop: number;
+  scrollWidth: number;
+  scrollHeight: number;
+  clientWidth: number;
+  clientHeight: number;
+}
+
+export type EmbedCardStyle =
+  | 'horizontal'
+  | 'horizontalThin'
+  | 'list'
+  | 'vertical'
+  | 'cube'
+  | 'cubeThick'
+  | 'video'
+  | 'figma'
+  | 'html'
+  | 'syncedDoc';

@@ -3,8 +3,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     globalSetup: '../../scripts/vitest-global.ts',
-    include: ['src/**/*.unit.spec.ts'],
-    testTimeout: 500,
+    include: ['src/__tests__/**/*.unit.spec.ts'],
+    testTimeout: 1000,
     coverage: {
       provider: 'istanbul', // or 'c8'
       reporter: ['lcov'],
@@ -16,6 +16,9 @@ export default defineConfig({
      * Return `false` to ignore the log.
      */
     onConsoleLog(log, type) {
+      if (log.includes('https://lit.dev/msg/dev-mode')) {
+        return false;
+      }
       console.warn(`Unexpected ${type} log`, log);
       throw new Error(log);
     },

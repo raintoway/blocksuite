@@ -1,4 +1,4 @@
-import { BaseBlockModel, defineBlockSchema } from '@blocksuite/store';
+import { BlockModel, defineBlockSchema } from '@blocksuite/store';
 
 import type { FilterGroup } from '../database-block/common/ast.js';
 import type { DataSourceConfig } from '../database-block/common/datasource/base.js';
@@ -19,7 +19,7 @@ type Props = {
   views: DataView[];
 };
 
-export class DataViewBlockModel extends BaseBlockModel<Props> {
+export class DataViewBlockModel extends BlockModel<Props> {
   constructor() {
     super();
     this.created.on(() => {
@@ -30,9 +30,9 @@ export class DataViewBlockModel extends BaseBlockModel<Props> {
   }
 
   addView(mode: DataView['mode']) {
-    this.page.captureSync();
-    const id = this.page.generateBlockId();
-    this.page.transact(() => {
+    this.doc.captureSync();
+    const id = this.doc.generateBlockId();
+    this.doc.transact(() => {
       this.views.push({
         id,
         mode,
@@ -45,14 +45,14 @@ export class DataViewBlockModel extends BaseBlockModel<Props> {
   }
 
   deleteView(id: string) {
-    this.page.captureSync();
-    this.page.transact(() => {
+    this.doc.captureSync();
+    this.doc.transact(() => {
       this.views = this.views.filter(v => v.id !== id);
     });
   }
 
   updateView(id: string, update: (data: DataView) => Partial<DataView>) {
-    this.page.transact(() => {
+    this.doc.transact(() => {
       this.views = this.views.map(v => {
         if (v.id !== id) {
           return v;
@@ -64,7 +64,7 @@ export class DataViewBlockModel extends BaseBlockModel<Props> {
   }
 
   applyViewsUpdate() {
-    this.page.updateBlock(this, {
+    this.doc.updateBlock(this, {
       views: this.views,
     });
   }

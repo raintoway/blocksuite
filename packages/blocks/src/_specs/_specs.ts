@@ -1,7 +1,7 @@
 import type { BlockSpec } from '@blocksuite/block-std';
 import { literal, unsafeStatic } from 'lit/static-html.js';
 
-// import { AFFINE_BLOCK_HUB_WIDGET } from '../_common/widgets/block-hub/index.js';
+// import { AFFINE_BLOCK_HUB_WIDGET } from '../root-block/widgets/block-hub/block-hub.js';
 import { AttachmentBlockSchema } from '../attachment-block/attachment-model.js';
 import { AttachmentService } from '../attachment-block/attachment-service.js';
 import { BookmarkService } from '../bookmark-block/bookmark-service.js';
@@ -11,56 +11,61 @@ import { DataViewBlockSchema } from '../data-view-block/index.js';
 import { DatabaseBlockSchema } from '../database-block/database-model.js';
 import { DatabaseService } from '../database-block/database-service.js';
 import { DividerBlockSchema } from '../divider-block/divider-model.js';
+import { EmbedFigmaBlockSpec } from '../embed-figma-block/embed-figma-spec.js';
 import { EmbedGithubBlockSpec } from '../embed-github-block/index.js';
 import { EmbedHtmlBlockSpec } from '../embed-html-block/embed-html-spec.js';
-import { FrameBlockSchema } from '../frame-block/index.js';
+import { EmbedLinkedDocBlockSpec } from '../embed-linked-doc-block/embed-linked-doc-spec.js';
+import { EmbedLoomBlockSpec } from '../embed-loom-block/embed-loom-spec.js';
+import { EmbedSyncedDocBlockSpec } from '../embed-synced-doc-block/embed-synced-doc-spec.js';
+import { EmbedYoutubeBlockSpec } from '../embed-youtube-block/embed-youtube-spec.js';
+import { FrameBlockSchema } from '../frame-block/frame-model.js';
 import { ImageBlockSchema } from '../image-block/image-model.js';
 import { ImageService } from '../image-block/index.js';
 import { ListBlockSchema } from '../list-block/list-model.js';
+import { ListService } from '../list-block/list-service.js';
 import { NoteService } from '../note-block/index.js';
 import { NoteBlockSchema } from '../note-block/note-model.js';
-import { DocPageService } from '../page-block/doc/doc-page-service.js';
-import { EdgelessPageService } from '../page-block/edgeless/edgeless-page-service.js';
-import {
-  type DocPageBlockWidgetName,
-  type EdgelessPageBlockWidgetName,
-} from '../page-block/index.js';
-import { PageBlockSchema } from '../page-block/page-model.js';
-import { AFFINE_DOC_DRAGGING_AREA_WIDGET } from '../page-block/widgets/doc-dragging-area/doc-dragging-area.js';
-import { AFFINE_DOC_PAGE_META_DATA } from '../page-block/widgets/doc-page-meta-data/doc-page-meta-data.js';
-import { AFFINE_DOC_REMOTE_SELECTION_WIDGET } from '../page-block/widgets/doc-remote-selection/doc-remote-selection.js';
-import { AFFINE_DRAG_HANDLE_WIDGET } from '../page-block/widgets/drag-handle/drag-handle.js';
-import { AFFINE_EDGELESS_REMOTE_SELECTION_WIDGET } from '../page-block/widgets/edgeless-remote-selection/index.js';
-import { AFFINE_FORMAT_BAR_WIDGET } from '../page-block/widgets/format-bar/format-bar.js';
-import { AFFINE_LINKED_PAGE_WIDGET } from '../page-block/widgets/linked-page/index.js';
-import { AFFINE_MODAL_WIDGET } from '../page-block/widgets/modal/modal.js';
-import { AFFINE_SLASH_MENU_WIDGET } from '../page-block/widgets/slash-menu/index.js';
 import { ParagraphBlockSchema } from '../paragraph-block/paragraph-model.js';
+import { ParagraphService } from '../paragraph-block/paragraph-service.js';
+import { EdgelessRootService } from '../root-block/edgeless/edgeless-root-service.js';
+import {
+  type EdgelessRootBlockWidgetName,
+  type PageRootBlockWidgetName,
+} from '../root-block/index.js';
+import { PageRootService } from '../root-block/page/page-root-service.js';
+import { RootBlockSchema } from '../root-block/root-model.js';
+import { AFFINE_DOC_REMOTE_SELECTION_WIDGET } from '../root-block/widgets/doc-remote-selection/doc-remote-selection.js';
+import { AFFINE_DRAG_HANDLE_WIDGET } from '../root-block/widgets/drag-handle/drag-handle.js';
+import { AFFINE_EDGELESS_REMOTE_SELECTION_WIDGET } from '../root-block/widgets/edgeless-remote-selection/index.js';
+import { AFFINE_EDGELESS_ZOOM_TOOLBAR_WIDGET } from '../root-block/widgets/edgeless-zoom-toolbar/index.js';
+import { AFFINE_FORMAT_BAR_WIDGET } from '../root-block/widgets/format-bar/format-bar.js';
+import { AFFINE_LINKED_DOC_WIDGET } from '../root-block/widgets/linked-doc/index.js';
+import { AFFINE_MODAL_WIDGET } from '../root-block/widgets/modal/modal.js';
+import { AFFINE_PAGE_DRAGGING_AREA_WIDGET } from '../root-block/widgets/page-dragging-area/page-dragging-area.js';
+import { AFFINE_SLASH_MENU_WIDGET } from '../root-block/widgets/slash-menu/index.js';
 import { SurfaceBlockSchema } from '../surface-block/surface-model.js';
+import { SurfacePageService } from '../surface-block/surface-page-service.js';
 import { SurfaceService } from '../surface-block/surface-service.js';
-import { SurfaceRefBlockSchema } from '../surface-ref-block/index.js';
+import {
+  SurfaceRefBlockSchema,
+  SurfaceRefBlockService,
+} from '../surface-ref-block/index.js';
 
-const DocPageSpec: BlockSpec<DocPageBlockWidgetName> = {
-  schema: PageBlockSchema,
-  service: DocPageService,
+const DocPageSpec: BlockSpec<PageRootBlockWidgetName> = {
+  schema: RootBlockSchema,
+  service: PageRootService,
   view: {
-    component: literal`affine-doc-page`,
+    component: literal`affine-page-root`,
     widgets: {
       // [AFFINE_BLOCK_HUB_WIDGET]: literal`${unsafeStatic(
       //   AFFINE_BLOCK_HUB_WIDGET
       // )}`,
-      [AFFINE_DOC_PAGE_META_DATA]: literal`${unsafeStatic(
-        AFFINE_DOC_PAGE_META_DATA
-      )}`,
       [AFFINE_MODAL_WIDGET]: literal`${unsafeStatic(AFFINE_MODAL_WIDGET)}`,
       [AFFINE_SLASH_MENU_WIDGET]: literal`${unsafeStatic(
         AFFINE_SLASH_MENU_WIDGET
       )}`,
-      [AFFINE_LINKED_PAGE_WIDGET]: literal`${unsafeStatic(
-        AFFINE_LINKED_PAGE_WIDGET
-      )}`,
-      [AFFINE_DOC_DRAGGING_AREA_WIDGET]: literal`${unsafeStatic(
-        AFFINE_DOC_DRAGGING_AREA_WIDGET
+      [AFFINE_LINKED_DOC_WIDGET]: literal`${unsafeStatic(
+        AFFINE_LINKED_DOC_WIDGET
       )}`,
       [AFFINE_DRAG_HANDLE_WIDGET]: literal`${unsafeStatic(
         AFFINE_DRAG_HANDLE_WIDGET
@@ -71,15 +76,18 @@ const DocPageSpec: BlockSpec<DocPageBlockWidgetName> = {
       [AFFINE_DOC_REMOTE_SELECTION_WIDGET]: literal`${unsafeStatic(
         AFFINE_DOC_REMOTE_SELECTION_WIDGET
       )}`,
+      [AFFINE_PAGE_DRAGGING_AREA_WIDGET]: literal`${unsafeStatic(
+        AFFINE_PAGE_DRAGGING_AREA_WIDGET
+      )}`,
     },
   },
 };
 
-const EdgelessPageSpec: BlockSpec<EdgelessPageBlockWidgetName> = {
-  schema: PageBlockSchema,
-  service: EdgelessPageService,
+const EdgelessPageSpec: BlockSpec<EdgelessRootBlockWidgetName> = {
+  schema: RootBlockSchema,
+  service: EdgelessRootService,
   view: {
-    component: literal`affine-edgeless-page`,
+    component: literal`affine-edgeless-root`,
     widgets: {
       // [AFFINE_BLOCK_HUB_WIDGET]: literal`${unsafeStatic(
       //   AFFINE_BLOCK_HUB_WIDGET
@@ -88,8 +96,8 @@ const EdgelessPageSpec: BlockSpec<EdgelessPageBlockWidgetName> = {
       [AFFINE_SLASH_MENU_WIDGET]: literal`${unsafeStatic(
         AFFINE_SLASH_MENU_WIDGET
       )}`,
-      [AFFINE_LINKED_PAGE_WIDGET]: literal`${unsafeStatic(
-        AFFINE_LINKED_PAGE_WIDGET
+      [AFFINE_LINKED_DOC_WIDGET]: literal`${unsafeStatic(
+        AFFINE_LINKED_DOC_WIDGET
       )}`,
       [AFFINE_DRAG_HANDLE_WIDGET]: literal`${unsafeStatic(
         AFFINE_DRAG_HANDLE_WIDGET
@@ -103,23 +111,20 @@ const EdgelessPageSpec: BlockSpec<EdgelessPageBlockWidgetName> = {
       [AFFINE_EDGELESS_REMOTE_SELECTION_WIDGET]: literal`${unsafeStatic(
         AFFINE_EDGELESS_REMOTE_SELECTION_WIDGET
       )}`,
+      [AFFINE_EDGELESS_ZOOM_TOOLBAR_WIDGET]: literal`${unsafeStatic(
+        AFFINE_EDGELESS_ZOOM_TOOLBAR_WIDGET
+      )}`,
     },
   },
 };
 
 const CommonFirstPartyBlockSpecs: BlockSpec[] = [
   {
-    schema: SurfaceBlockSchema,
-    view: {
-      component: literal`affine-surface`,
-    },
-    service: SurfaceService,
-  },
-  {
     schema: ListBlockSchema,
     view: {
       component: literal`affine-list`,
     },
+    service: ListService,
   },
   {
     schema: NoteBlockSchema,
@@ -168,6 +173,7 @@ const CommonFirstPartyBlockSpecs: BlockSpec[] = [
     view: {
       component: literal`affine-paragraph`,
     },
+    service: ParagraphService,
   },
   {
     schema: BookmarkBlockSchema,
@@ -183,8 +189,28 @@ const CommonFirstPartyBlockSpecs: BlockSpec[] = [
     },
     service: AttachmentService,
   },
+  EmbedFigmaBlockSpec,
+  EmbedYoutubeBlockSpec,
+  EmbedGithubBlockSpec,
+  EmbedHtmlBlockSpec,
+  EmbedLinkedDocBlockSpec,
+  EmbedSyncedDocBlockSpec,
+  EmbedLoomBlockSpec,
+];
+
+export const PageEditorBlockSpecs: BlockSpec[] = [
+  DocPageSpec,
+  ...CommonFirstPartyBlockSpecs,
+  {
+    schema: SurfaceBlockSchema,
+    view: {
+      component: literal`affine-surface`,
+    },
+    service: SurfacePageService,
+  },
   {
     schema: SurfaceRefBlockSchema,
+    service: SurfaceRefBlockService,
     view: {
       component: literal`affine-surface-ref`,
       widgets: {
@@ -192,22 +218,29 @@ const CommonFirstPartyBlockSpecs: BlockSpec[] = [
       },
     },
   },
-  EmbedGithubBlockSpec,
-  EmbedHtmlBlockSpec,
-];
-
-export const DocEditorBlockSpecs: BlockSpec[] = [
-  DocPageSpec,
-  ...CommonFirstPartyBlockSpecs,
 ];
 
 export const EdgelessEditorBlockSpecs: BlockSpec[] = [
   EdgelessPageSpec,
   ...CommonFirstPartyBlockSpecs,
   {
+    schema: SurfaceBlockSchema,
+    view: {
+      component: literal`affine-surface`,
+    },
+    service: SurfaceService,
+  },
+  {
     schema: FrameBlockSchema,
     view: {
       component: literal`affine-frame`,
+    },
+  },
+  {
+    schema: SurfaceRefBlockSchema,
+    service: SurfaceRefBlockService,
+    view: {
+      component: literal`affine-edgeless-surface-ref`,
     },
   },
 ];

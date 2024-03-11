@@ -1,4 +1,4 @@
-import { type BaseBlockModel, Slice } from '@blocksuite/store';
+import { type BlockModel, Slice } from '@blocksuite/store';
 import { html, nothing } from 'lit';
 import { ref, type RefOrCallback } from 'lit/directives/ref.js';
 
@@ -20,12 +20,12 @@ export function CodeOptionTemplate({
 }: {
   ref?: RefOrCallback;
   anchor: CodeBlockComponent;
-  model: BaseBlockModel;
+  model: BlockModel;
   wrap: boolean;
   abortController: AbortController;
   onClickWrap: () => void;
 }) {
-  const page = model.page;
+  const page = model.doc;
   const readonly = page.readonly;
 
   return html`
@@ -54,14 +54,14 @@ export function CodeOptionTemplate({
         size="32px"
         data-testid="copy-button"
         @click=${() => {
-          const slice = Slice.fromModels(model.page, [model]);
+          const slice = Slice.fromModels(model.doc, [model]);
           anchor.std.clipboard
             .copySlice(slice)
             .then(() => {
-              toast('Copied to clipboard');
+              toast(anchor.host, 'Copied to clipboard');
             })
             .catch(e => {
-              toast('Copied failed, something went wrong');
+              toast(anchor.host, 'Copied failed, something went wrong');
               console.error(e);
             });
         }}
@@ -90,7 +90,7 @@ export function CodeOptionTemplate({
             class="delete-code-button"
             @click=${() => {
               if (readonly) return;
-              model.page.deleteBlock(model);
+              model.doc.deleteBlock(model);
             }}
           >
             ${DeleteIcon}

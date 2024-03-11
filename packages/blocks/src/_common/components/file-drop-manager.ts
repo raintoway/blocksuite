@@ -1,13 +1,14 @@
 import type { BlockService } from '@blocksuite/block-std';
 import { assertExists } from '@blocksuite/global/utils';
 import type { EditorHost } from '@blocksuite/lit';
-import type { BaseBlockModel } from '@blocksuite/store';
+import type { BlockModel } from '@blocksuite/store';
 
 import {
   calcDropTarget,
+  type DropResult,
   getClosestBlockElementByPoint,
   getModelByBlockComponent,
-  isInsideDocEditor,
+  isInsidePageEditor,
   matchFlavours,
   Point,
 } from '../../_common/utils/index.js';
@@ -15,7 +16,7 @@ import type { DragIndicator } from './drag-indicator.js';
 
 export type onDropProps = {
   files: File[];
-  targetModel: BaseBlockModel | null;
+  targetModel: BlockModel | null;
   place: 'before' | 'after';
   point: Point;
 };
@@ -33,6 +34,8 @@ export type FileDropOptions = {
 export class FileDropManager {
   private _blockService: BlockService;
   private _fileDropOptions: FileDropOptions;
+
+  private static _dropResult: DropResult | null = null;
   private _indicator!: DragIndicator;
 
   constructor(blockService: BlockService, fileDropOptions: FileDropOptions) {
@@ -46,7 +49,7 @@ export class FileDropManager {
       this._indicator = <DragIndicator>(
         document.createElement('affine-drag-indicator')
       );
-      document.body.appendChild(this._indicator);
+      document.body.append(this._indicator);
     }
 
     if (fileDropOptions.onDrop) {
@@ -62,27 +65,47 @@ export class FileDropManager {
     return this._blockService.std.host as EditorHost;
   }
 
+  get doc() {
+    return this._blockService.doc;
+  }
+
   get type(): 'before' | 'after' {
-    return !this._indicator.dropResult ||
-      this._indicator.dropResult.type !== 'before'
+    return !FileDropManager._dropResult ||
+      FileDropManager._dropResult.type !== 'before'
       ? 'after'
       : 'before';
   }
 
-  get targetModel(): BaseBlockModel | null {
-    const pageBlock = this._blockService.page.root;
-    assertExists(pageBlock);
+  get targetModel(): BlockModel | null {
+    let targetModel = FileDropManager._dropResult?.modelState.model || null;
 
-    let targetModel = this._indicator.dropResult?.modelState.model || null;
+    if (!targetModel && isInsidePageEditor(this.editorHost)) {
+      const rootModel = this.doc.root;
+      assertExists(rootModel);
 
-    if (!targetModel && isInsideDocEditor(this.editorHost)) {
-      const lastNote = pageBlock.children[pageBlock.children.length - 1];
-      if (!matchFlavours(lastNote, ['affine:note'])) {
-        throw new Error('The last block is not a note block.');
+      let lastNote = rootModel.children[rootModel.children.length - 1];
+      if (!lastNote || !matchFlavours(lastNote, ['affine:note'])) {
+        const newNoteId = this.doc.addBlock('affine:note', {}, rootModel.id);
+        const newNote = this.doc.getBlockById(newNoteId);
+        assertExists(newNote);
+        lastNote = newNote;
       }
-      targetModel = lastNote.lastItem();
-    }
 
+      const lastItem = lastNote.lastItem();
+      if (lastItem && !matchFlavours(lastItem, ['affine:note'])) {
+        targetModel = lastItem;
+      } else {
+        const newParagraphId = this.doc.addBlock(
+          'affine:paragraph',
+          {},
+          lastNote,
+          0
+        );
+        const newParagraph = this.doc.getBlockById(newParagraphId);
+        assertExists(newParagraph);
+        targetModel = newParagraph;
+      }
+    }
     return targetModel;
   }
 
@@ -91,38 +114,56 @@ export class FileDropManager {
 
     // allow only external drag-and-drop files
     const effectAllowed = event.dataTransfer?.effectAllowed ?? 'none';
-    if (effectAllowed !== 'all') return;
+    if (effectAllowed !== 'all') {
+      return;
+    }
 
     const { clientX, clientY } = event;
     const point = new Point(clientX, clientY);
     const element = getClosestBlockElementByPoint(point.clone());
 
-    let result = null;
-    let rect = null;
+    let result: DropResult | null = null;
     if (element) {
       const model = getModelByBlockComponent(element);
-      result = calcDropTarget(point, model, element);
-      if (result) {
-        rect = result.rect;
+      const parent = this.doc.getParent(model);
+      if (!matchFlavours(parent, ['affine:surface'])) {
+        result = calcDropTarget(point, model, element);
       }
     }
+    if (result) {
+      FileDropManager._dropResult = result;
+      this._indicator.rect = result.rect;
+    } else {
+      FileDropManager._dropResult = null;
+      this._indicator.rect = null;
+    }
+  };
 
-    this._indicator.dropResult = result;
-    this._indicator.rect = rect;
+  onDragLeave = () => {
+    FileDropManager._dropResult = null;
+    this._indicator.rect = null;
   };
 
   private _onDrop = (event: DragEvent) => {
+    this._indicator.rect = null;
+
     const { onDrop } = this._fileDropOptions;
-    if (!onDrop) return;
+    if (!onDrop) {
+      return;
+    }
 
     event.preventDefault();
 
     // allow only external drag-and-drop files
     const effectAllowed = event.dataTransfer?.effectAllowed ?? 'none';
-    if (effectAllowed !== 'all') return;
+    if (effectAllowed !== 'all') {
+      return;
+    }
 
     const droppedFiles = event.dataTransfer?.files;
-    if (!droppedFiles || !droppedFiles.length) return;
+    if (!droppedFiles || !droppedFiles.length) {
+      return;
+    }
 
     const targetModel = this.targetModel;
     const place = this.type;
@@ -133,7 +174,5 @@ export class FileDropManager {
     onDrop({ files: [...droppedFiles], targetModel, place, point })?.catch(
       console.error
     );
-
-    this._indicator.reset();
   };
 }

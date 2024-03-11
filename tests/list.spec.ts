@@ -11,6 +11,7 @@ import {
   pressBackspace,
   pressBackspaceWithShortKey,
   pressEnter,
+  pressShiftEnter,
   pressShiftTab,
   pressSpace,
   pressTab,
@@ -209,6 +210,7 @@ test('nested list blocks', async ({ page }) => {
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -255,6 +257,7 @@ test('nested list blocks', async ({ page }) => {
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -333,6 +336,7 @@ test('basic indent and unindent', async ({ page }) => {
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -365,6 +369,7 @@ test('basic indent and unindent', async ({ page }) => {
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -399,6 +404,7 @@ test('basic indent and unindent', async ({ page }) => {
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -442,6 +448,7 @@ test('should indent todo block preserve todo status', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -475,6 +482,7 @@ test('should indent todo block preserve todo status', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -602,8 +610,9 @@ test.describe('indent correctly when deleting list item', () => {
     await pressBackspace(page);
     await pressBackspace(page);
     await pressBackspace(page);
-    await pressEnter(page);
+    await assertRichTexts(page, ['a', 'b', 'c', '']);
 
+    await pressEnter(page);
     await type(page, '- d');
     await pressEnter(page);
     await pressTab(page);
@@ -617,6 +626,7 @@ test.describe('indent correctly when deleting list item', () => {
     await pressBackspace(page);
     await pressBackspace(page);
 
+    await assertRichTexts(page, ['a', 'b', '', 'd', 'e', 'f']);
     await assertBlockChildrenIds(page, '1', ['3', '9']);
     await assertBlockChildrenIds(page, '3', ['4']);
     await assertBlockChildrenIds(page, '4', ['5']);
@@ -693,6 +703,20 @@ test('add number prefix to a todo item should not forcefully change it into numb
   await assertListPrefix(page, ['']);
 });
 
+test('should not convert to a list when pressing space at the second line', async ({
+  page,
+}) => {
+  await enterPlaygroundRoom(page);
+  await initEmptyParagraphState(page);
+  await focusRichText(page);
+  await type(page, 'aaa');
+  await pressShiftEnter(page);
+  await type(page, '-');
+  await pressSpace(page);
+  await type(page, 'bbb');
+  await assertRichTexts(page, ['aaa\n- bbb']);
+});
+
 test.describe('toggle list', () => {
   const getToggleIcon = (page: Page) => page.locator('.toggle-icon');
 
@@ -726,6 +750,7 @@ test.describe('toggle list', () => {
 
     await expect(prefixes).toHaveCount(3);
     await parentPrefix.hover();
+    await waitNextFrame(page);
     await assertToggleIconVisible(toggleIcon);
 
     await toggleIcon.click();
@@ -735,6 +760,7 @@ test.describe('toggle list', () => {
       `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -782,6 +808,7 @@ test.describe('toggle list', () => {
       `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {

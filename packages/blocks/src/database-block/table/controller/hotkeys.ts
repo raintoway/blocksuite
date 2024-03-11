@@ -1,5 +1,6 @@
 import type { ReactiveController } from 'lit';
 
+import { getRootByElement } from '../../../_common/utils/query.js';
 import { popRowMenu } from '../components/menu.js';
 import type { DataViewTable } from '../table-view.js';
 
@@ -188,12 +189,14 @@ export class TableHotkeysController implements ReactiveController {
           context.get('keyboardState').raw.preventDefault();
           return true;
         },
-        'Mod-a': () => {
+        'Mod-a': context => {
           const selection = this.selectionController.selection;
           if (selection?.isEditing) {
             return true;
           }
           if (selection) {
+            context.get('keyboardState').raw.preventDefault();
+
             const start = 0;
             const end = this.host.view.rows.length - 1;
             if (
@@ -227,7 +230,8 @@ export class TableHotkeysController implements ReactiveController {
           );
           if (cell) {
             context.get('keyboardState').raw.preventDefault();
-            popRowMenu(cell, cell.rowId, this.selectionController);
+            const rootElement = getRootByElement(cell);
+            popRowMenu(rootElement, cell, cell.rowId, this.selectionController);
           }
         },
       })

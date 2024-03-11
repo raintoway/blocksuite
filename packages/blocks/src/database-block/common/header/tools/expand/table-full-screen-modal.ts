@@ -34,12 +34,12 @@ export class DatabaseTableViewFullScreen extends BlockElement<DatabaseBlockModel
     `;
   };
 
-  override render() {
+  override renderBlock() {
     return html`<div class="table-view-full-modal-overlay">
       <div class="table-view-full-modal-container">
         <div class="table-view-full-header">
           <div class="titles">
-            <span class="title">${this.page.meta.title}</span>
+            <span class="title">${this.doc.meta?.title ?? ''}</span>
             <span class="separator">/</span>
             <span class="title"
               >${DatabaseTableViewIcon}${this.model.title.toString()}</span

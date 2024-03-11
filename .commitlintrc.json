@@ -8,11 +8,16 @@
         "page",
         "edgeless",
         "database",
+        "blocks",
         "store",
+        "sync",
         "std",
         "presets",
         "playground",
-        "inline"
+        "inline",
+        "lit",
+        "sync",
+        "examples"
       ]
     ]
   }

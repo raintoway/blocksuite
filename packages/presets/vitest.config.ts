@@ -1,5 +1,6 @@
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig(_configEnv =>
@@ -9,10 +10,10 @@ export default defineConfig(_configEnv =>
       include: ['@blocksuite/blocks > buffer'],
     },
     test: {
-      include: ['tests/**/*.spec.ts'],
+      include: ['src/__tests__/**/*.spec.ts'],
       browser: {
         enabled: true,
-        headless: true,
+        headless: false,
         name: 'chromium',
         provider: 'playwright',
         isolate: false,
@@ -22,7 +23,7 @@ export default defineConfig(_configEnv =>
         interopDefault: true,
       },
       testTransformMode: {
-        web: ['tests/**/*.spec.ts'],
+        web: ['src/__tests__/**/*.spec.ts'],
       },
       alias: {
         '@blocksuite/blocks': path.resolve(
@@ -32,16 +33,16 @@ export default defineConfig(_configEnv =>
           fileURLToPath(new URL('../blocks/src/*', import.meta.url))
         ),
         '@blocksuite/global/*': path.resolve(
-          fileURLToPath(new URL('../global/src/*', import.meta.url))
+          fileURLToPath(new URL('../framework/global/src/*', import.meta.url))
         ),
         '@blocksuite/store': path.resolve(
-          fileURLToPath(new URL('../store/src', import.meta.url))
+          fileURLToPath(new URL('../framework/store/src', import.meta.url))
         ),
         '@blocksuite/inline': path.resolve(
-          fileURLToPath(new URL('../inline/src', import.meta.url))
+          fileURLToPath(new URL('../framework/inline/src', import.meta.url))
         ),
         '@blocksuite/inline/*': path.resolve(
-          fileURLToPath(new URL('../inline/src/*', import.meta.url))
+          fileURLToPath(new URL('../framework/inline/src/*', import.meta.url))
         ),
       },
     },

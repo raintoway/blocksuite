@@ -1,5 +1,5 @@
 import { assertExists } from '@blocksuite/global/utils';
-import type { BaseBlockModel } from '@blocksuite/store';
+import type { BlockModel } from '@blocksuite/store';
 
 import { type EditingState } from '../types.js';
 import { matchFlavours } from './model.js';
@@ -29,13 +29,13 @@ export type DropResult = {
  */
 export function calcDropTarget(
   point: Point,
-  model: BaseBlockModel,
+  model: BlockModel,
   element: Element,
   draggingElements: BlockComponent[] = [],
   scale: number = 1,
   flavour: string | null = null // for block-hub
 ): DropResult | null {
-  const schema = model.page.getSchemaByFlavour('affine:database');
+  const schema = model.doc.getSchemaByFlavour('affine:database');
   assertExists(schema);
   const children = schema.model.children ?? [];
 
@@ -146,8 +146,9 @@ export function calcDropTarget(
         next = null;
       }
     } else {
-      next = getClosestBlockElementByElement(element.parentElement)
-        ?.nextElementSibling;
+      next = getClosestBlockElementByElement(
+        element.parentElement
+      )?.nextElementSibling;
     }
 
     if (next) {

@@ -8,12 +8,11 @@ import './data-view.js';
 
 import { PathFinder } from '@blocksuite/block-std';
 import { Slot } from '@blocksuite/global/utils';
-import { BlockElement } from '@blocksuite/lit';
+import { BlockElement, RangeManager } from '@blocksuite/lit';
 import { Slice } from '@blocksuite/store';
 import { css, nothing, unsafeCSS } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { createRef, ref } from 'lit/directives/ref.js';
-import { when } from 'lit/directives/when.js';
 import { html } from 'lit/static-html.js';
 
 import { DragIndicator } from '../_common/components/index.js';
@@ -26,11 +25,13 @@ import {
 } from '../_common/icons/index.js';
 import type { DataViewSelection } from '../_common/utils/index.js';
 import { Rect } from '../_common/utils/index.js';
-import { AffineDragHandleWidget } from '../page-block/widgets/drag-handle/drag-handle.js';
+import type { NoteBlockComponent } from '../note-block/note-block.js';
+import { EdgelessRootBlockComponent } from '../root-block/edgeless/edgeless-root-block.js';
+import { AffineDragHandleWidget } from '../root-block/widgets/drag-handle/drag-handle.js';
 import {
   captureEventTarget,
   getDropResult,
-} from '../page-block/widgets/drag-handle/utils.js';
+} from '../root-block/widgets/drag-handle/utils.js';
 import { dataViewCommonStyle } from './common/css-variable.js';
 import type { DataViewProps, DataViewTypes } from './common/data-view.js';
 import { type DataViewExpose } from './common/data-view.js';
@@ -44,10 +45,14 @@ import type { SingleViewSource, ViewSource } from './common/view-source.js';
 import type { DataViewNative, DataViewNativeConfig } from './data-view.js';
 import type { DatabaseBlockModel } from './database-model.js';
 import { DatabaseBlockSchema } from './database-model.js';
+import type { DatabaseService } from './database-service.js';
 import type { InsertToPosition } from './types.js';
 
 @customElement('affine-database')
-export class DatabaseBlockComponent extends BlockElement<DatabaseBlockModel> {
+export class DatabaseBlockComponent extends BlockElement<
+  DatabaseBlockModel,
+  DatabaseService
+> {
   static override styles = css`
     ${unsafeCSS(dataViewCommonStyle('affine-database'))}
     affine-database {
@@ -91,18 +96,18 @@ export class DatabaseBlockComponent extends BlockElement<DatabaseBlockModel> {
       );
       return () => {
         this.indicator.remove();
-        const model = this.page.getBlockById(id);
-        const target = this.page.getBlockById(result.dropBlockId);
-        let parent = this.page.getParent(result.dropBlockId);
+        const model = this.doc.getBlockById(id);
+        const target = this.doc.getBlockById(result.dropBlockId);
+        let parent = this.doc.getParent(result.dropBlockId);
         const shouldInsertIn = result.dropType === 'in';
         if (shouldInsertIn) {
           parent = target;
         }
         if (model && target && parent) {
           if (shouldInsertIn) {
-            this.page.moveBlocks([model], parent);
+            this.doc.moveBlocks([model], parent);
           } else {
-            this.page.moveBlocks(
+            this.doc.moveBlocks(
               [model],
               parent,
               target,
@@ -131,7 +136,7 @@ export class DatabaseBlockComponent extends BlockElement<DatabaseBlockModel> {
             icon: CopyIcon,
             name: 'Copy',
             select: () => {
-              const slice = Slice.fromModels(this.page, [this.model]);
+              const slice = Slice.fromModels(this.doc, [this.model]);
               this.std.clipboard.copySlice(slice).catch(console.error);
             },
           },
@@ -153,9 +158,9 @@ export class DatabaseBlockComponent extends BlockElement<DatabaseBlockModel> {
                 name: 'Delete Database',
                 select: () => {
                   this.model.children.slice().forEach(block => {
-                    this.page.deleteBlock(block);
+                    this.doc.deleteBlock(block);
                   });
-                  this.page.deleteBlock(this.model);
+                  this.doc.deleteBlock(this.model);
                 },
               },
             ],
@@ -165,7 +170,7 @@ export class DatabaseBlockComponent extends BlockElement<DatabaseBlockModel> {
     });
   };
   private renderDatabaseOps() {
-    if (this.page.readonly) {
+    if (this.doc.readonly) {
       return nothing;
     }
     return html`<div class="database-ops" @click="${this._clickDatabaseOps}">
@@ -173,8 +178,19 @@ export class DatabaseBlockComponent extends BlockElement<DatabaseBlockModel> {
     </div>`;
   }
 
+  override get topContenteditableElement() {
+    if (this.rootElement instanceof EdgelessRootBlockComponent) {
+      const note = this.closest<NoteBlockComponent>('affine-note');
+      return note;
+    }
+    return this.rootElement;
+  }
+
   override connectedCallback() {
     super.connectedCallback();
+
+    this.setAttribute(RangeManager.rangeSyncExcludeAttr, 'true');
+
     this._disposables.add(
       this.selection.slots.changed.on(selections => {
         const databaseSelection = selections.find(
@@ -193,12 +209,6 @@ export class DatabaseBlockComponent extends BlockElement<DatabaseBlockModel> {
         this.viewSource.updateSlot.emit();
       })
     );
-    this.handleEvent('selectionChange', () => {
-      const selection = this.service?.selectionManager.value.find(selection =>
-        PathFinder.equals(selection.path, this.path)
-      );
-      return !!selection;
-    });
     let canDrop = false;
     this.disposables.add(
       AffineDragHandleWidget.registerOption({
@@ -227,7 +237,7 @@ export class DatabaseBlockComponent extends BlockElement<DatabaseBlockModel> {
             this.parentElement?.contains(target)
           ) {
             const blocks = draggingElements.map(v => v.model);
-            this.model.page.moveBlocks(blocks, this.model);
+            this.doc.moveBlocks(blocks, this.model);
             blocks.forEach(model => {
               view.moveTo?.(model.id, state.raw);
             });
@@ -255,7 +265,7 @@ export class DatabaseBlockComponent extends BlockElement<DatabaseBlockModel> {
     if (!this._dataSource) {
       this._dataSource = new DatabaseBlockDatasource(this.host, {
         type: 'database-block',
-        pageId: this.host.page.id,
+        pageId: this.host.doc.id,
         blockId: this.model.id,
       });
     }
@@ -277,12 +287,12 @@ export class DatabaseBlockComponent extends BlockElement<DatabaseBlockModel> {
     return html` <affine-database-title
       style="overflow: hidden"
       .titleText="${this.model.title}"
-      .readonly="${this.model.page.readonly}"
+      .readonly="${this.doc.readonly}"
       .onPressEnterKey="${addRow}"
     ></affine-database-title>`;
   };
   private renderReference = () => {
-    return html` <div></div>`;
+    return html`<div></div>`;
   };
 
   headerComponent = defineUniComponent(
@@ -329,15 +339,15 @@ export class DatabaseBlockComponent extends BlockElement<DatabaseBlockModel> {
   selectionUpdated = new Slot<DataViewSelection | undefined>();
 
   get getFlag() {
-    return this.host.page.awarenessStore.getFlag.bind(
-      this.host.page.awarenessStore
+    return this.host.doc.awarenessStore.getFlag.bind(
+      this.host.doc.awarenessStore
     );
   }
 
   _bindHotkey: DataViewProps['bindHotkey'] = hotkeys => {
     return {
       dispose: this.host.event.bindHotkey(hotkeys, {
-        path: this.path,
+        path: this.topContenteditableElement?.path ?? this.path,
       }),
     };
   };
@@ -349,7 +359,7 @@ export class DatabaseBlockComponent extends BlockElement<DatabaseBlockModel> {
     };
   };
 
-  override render() {
+  override renderBlock() {
     const config: DataViewNativeConfig = {
       bindHotkey: this._bindHotkey,
       handleEvent: this._handleEvent,
@@ -363,18 +373,16 @@ export class DatabaseBlockComponent extends BlockElement<DatabaseBlockModel> {
       std: this.std,
     };
     return html`
-      <div style="position: relative">
+      <div contenteditable="false" style="position: relative">
         <affine-data-view-native
           ${ref(this._view)}
           .config="${config}"
         ></affine-data-view-native>
-        ${when(
-          this.selected?.is('block'),
-          () =>
-            html` <affine-block-selection
-              style="z-index: 1"
-            ></affine-block-selection>`
-        )}
+
+        <affine-block-selection
+          .block=${this}
+          style="z-index: 1"
+        ></affine-block-selection>
       </div>
     `;
   }
@@ -412,11 +420,11 @@ class DatabaseBlockViewSource implements ViewSource {
   }
 
   public get readonly(): boolean {
-    return this.model.page.readonly;
+    return this.model.doc.readonly;
   }
 
   public viewAdd(type: DataViewTypes): string {
-    this.model.page.captureSync();
+    this.model.doc.captureSync();
     const view = this.model.addView(type);
     this.model.applyViewsUpdate();
     return view.id;
@@ -448,22 +456,26 @@ class DatabaseBlockViewSource implements ViewSource {
           return view;
         },
         updateView: updater => {
-          this.model.page.captureSync();
+          this.model.doc.captureSync();
           this.model.updateView(id, updater);
           this.model.applyViewsUpdate();
         },
         delete: () => {
-          this.model.page.captureSync();
+          this.model.doc.captureSync();
+          if (this.model.getViewList().length === 1) {
+            this.model.doc.deleteBlock(this.model);
+            return;
+          }
           this.model.deleteView(id);
           this.currentId = undefined;
           this.model.applyViewsUpdate();
         },
         get readonly() {
-          return self.model.page.readonly;
+          return self.model.doc.readonly;
         },
         updateSlot: slot,
         isDeleted() {
-          return !self.model.views.find(v => v.id === id);
+          return self.model.views.every(v => v.id !== id);
         },
       };
       this.viewMap.set(id, result);

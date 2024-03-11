@@ -1,7 +1,7 @@
 import type { Disposable } from '@blocksuite/global/utils';
 import { assertExists, Slot } from '@blocksuite/global/utils';
 import type { EditorHost } from '@blocksuite/lit';
-import type { BaseBlockModel } from '@blocksuite/store';
+import type { BlockModel } from '@blocksuite/store';
 import { Text, type Y } from '@blocksuite/store';
 
 import { createUniComponentFromWebComponent } from '../../../_common/components/uni-component/uni-component.js';
@@ -30,8 +30,8 @@ export class DatabaseBlockDatasource extends BaseDataSource {
   private _model: DatabaseBlockModel;
   private _batch = 0;
 
-  get page() {
-    return this._model.page;
+  get doc() {
+    return this._model.doc;
   }
 
   constructor(
@@ -39,8 +39,8 @@ export class DatabaseBlockDatasource extends BaseDataSource {
     config: DatabaseBlockDatasourceConfig
   ) {
     super();
-    this._model = host.page.workspace
-      .getPage(config.pageId)
+    this._model = host.doc.collection
+      .getDoc(config.pageId)
       ?.getBlockById(config.blockId) as DatabaseBlockModel;
     this._model.childrenUpdated.pipe(this.slots.update);
   }
@@ -50,7 +50,7 @@ export class DatabaseBlockDatasource extends BaseDataSource {
   }
 
   public get properties(): string[] {
-    return [...this._model.columns.map(column => column.id)];
+    return this._model.columns.map(column => column.id);
   }
 
   public slots = {
@@ -63,7 +63,7 @@ export class DatabaseBlockDatasource extends BaseDataSource {
     }
 
     this._batch = requestAnimationFrame(() => {
-      this.page.captureSync();
+      this.doc.captureSync();
       this._batch = 0;
     });
   }
@@ -92,7 +92,7 @@ export class DatabaseBlockDatasource extends BaseDataSource {
       }
       return;
     }
-    if (this._model.columns.find(v => v.id === propertyId)) {
+    if (this._model.columns.some(v => v.id === propertyId)) {
       this._model.updateCell(rowId, {
         columnId: propertyId,
         value,
@@ -133,7 +133,7 @@ export class DatabaseBlockDatasource extends BaseDataSource {
     return super.cellGetExtra(rowId, propertyId);
   }
 
-  private getModelById(rowId: string): BaseBlockModel | undefined {
+  private getModelById(rowId: string): BlockModel | undefined {
     return this._model.children[this._model.childMap.get(rowId) ?? -1];
   }
 
@@ -146,7 +146,7 @@ export class DatabaseBlockDatasource extends BaseDataSource {
 
   private newColumnName() {
     let i = 1;
-    while (this._model.columns.find(column => column.name === `Column ${i}`)) {
+    while (this._model.columns.some(column => column.name === `Column ${i}`)) {
       i++;
     }
     return `Column ${i}`;
@@ -156,7 +156,7 @@ export class DatabaseBlockDatasource extends BaseDataSource {
     insertToPosition: InsertToPosition,
     type?: string
   ): string {
-    this.page.captureSync();
+    this.doc.captureSync();
     return this._model.addColumn(
       insertToPosition,
       columnManager
@@ -176,7 +176,7 @@ export class DatabaseBlockDatasource extends BaseDataSource {
   }
 
   public propertyChangeName(propertyId: string, name: string): void {
-    this.page.captureSync();
+    this.doc.captureSync();
     this._model.updateColumn(propertyId, () => ({ name }));
     this._model.applyColumnUpdate();
   }
@@ -194,7 +194,7 @@ export class DatabaseBlockDatasource extends BaseDataSource {
       column: columnManager.getColumn(toType).defaultData(),
       cells: currentCells.map(() => undefined),
     };
-    this.page.captureSync();
+    this.doc.captureSync();
     this._model.updateColumn(propertyId, () => ({
       type: toType,
       data: result.column,
@@ -210,11 +210,11 @@ export class DatabaseBlockDatasource extends BaseDataSource {
   }
 
   public propertyDelete(id: string): void {
-    this.page.captureSync();
+    this.doc.captureSync();
     const index = this._model.findColumnIndex(id);
     if (index < 0) return;
 
-    this.page.transact(() => {
+    this.doc.transact(() => {
       this._model.columns.splice(index, 1);
     });
     this._model.applyColumnUpdate();
@@ -244,7 +244,7 @@ export class DatabaseBlockDatasource extends BaseDataSource {
   }
 
   public propertyDuplicate(columnId: string): string {
-    this.page.captureSync();
+    this.doc.captureSync();
     const currentSchema = this._model.getColumn(columnId);
     assertExists(currentSchema);
     const { id: copyId, ...nonIdProps } = currentSchema;
@@ -262,23 +262,23 @@ export class DatabaseBlockDatasource extends BaseDataSource {
   }
 
   public rowAdd(insertPosition: InsertToPosition | number): string {
-    this.page.captureSync();
+    this.doc.captureSync();
     const index =
       typeof insertPosition === 'number'
         ? insertPosition
         : insertPositionToIndex(insertPosition, this._model.children);
-    return this.page.addBlock('affine:paragraph', {}, this._model.id, index);
+    return this.doc.addBlock('affine:paragraph', {}, this._model.id, index);
   }
 
   public rowDelete(ids: string[]): void {
-    this.page.captureSync();
-    this.page.updateBlock(this._model, {
+    this.doc.captureSync();
+    this.doc.updateBlock(this._model, {
       children: this._model.children.filter(v => !ids.includes(v.id)),
     });
   }
 
   public override captureSync(): void {
-    this.page.captureSync();
+    this.doc.captureSync();
   }
 
   public override propertyGetDefaultWidth(propertyId: string): number {
@@ -326,11 +326,14 @@ export class DatabaseBlockDatasource extends BaseDataSource {
   }
 
   public rowMove(rowId: string, position: InsertToPosition): void {
-    const model = this.page.getBlockById(rowId);
+    const model = this.doc.getBlockById(rowId);
     if (model) {
       const index = insertPositionToIndex(position, this._model.children);
       const target = this._model.children[index];
-      this.page.moveBlocks([model], this._model, target);
+      if (target.id === rowId) {
+        return;
+      }
+      this.doc.moveBlocks([model], this._model, target);
     }
   }
 }

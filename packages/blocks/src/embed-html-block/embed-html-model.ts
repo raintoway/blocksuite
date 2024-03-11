@@ -1,12 +1,17 @@
-import { BaseBlockModel } from '@blocksuite/store';
+import { BlockModel } from '@blocksuite/store';
 
-import { makeEmbedModel } from '../_common/embed-block-helper/index.js';
+import { defineEmbedModel } from '../_common/embed-block-helper/index.js';
+import type { EmbedCardStyle } from '../_common/types.js';
+
+export const EmbedHtmlStyles: EmbedCardStyle[] = ['html'] as const;
 
 export type EmbedHtmlBlockProps = {
+  style: (typeof EmbedHtmlStyles)[number];
+  caption: string | null;
   html?: string;
   design?: string;
 };
 
-export class EmbedHtmlBlockModel extends makeEmbedModel<EmbedHtmlBlockProps>(
-  BaseBlockModel
+export class EmbedHtmlModel extends defineEmbedModel<EmbedHtmlBlockProps>(
+  BlockModel
 ) {}

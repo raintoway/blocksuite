@@ -1,13 +1,7 @@
 // something comes from https://github.com/excalidraw/excalidraw/blob/b1311a407a636c87ee0ca326fd20599d0ce4ba9b/src/utils.ts
 
-import type {
-  CanvasTextFontFamily,
-  CanvasTextFontStyle,
-} from '../../consts.js';
-import { type CanvasTextFontWeight } from '../../consts.js';
-import type { Bound } from '../../utils/bound.js';
-import type { TextElement } from './text-element.js';
-import type { ITextDelta } from './types.js';
+import type { CanvasTextFontFamily } from '../../consts.js';
+import { wrapFontFamily } from '../../utils/font.js';
 
 const RS_LTR_CHARS =
   'A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02B8\u0300-\u0590\u0800-\u1FFF' +
@@ -30,15 +24,6 @@ const getMeasureCtx = (function initMeasureContext() {
     return ctx!;
   };
 })();
-
-export const isChrome =
-  globalThis.navigator?.userAgent.indexOf('Chrome') !== -1;
-export const isSafari =
-  !isChrome && globalThis.navigator?.userAgent.indexOf('Safari') !== -1;
-
-export function wrapFontFamily(fontFamily: CanvasTextFontFamily): string {
-  return `"${fontFamily}"`;
-}
 
 const cachedFontFamily = new Map<
   string,
@@ -87,7 +72,7 @@ export function getFontString({
   const lineHeight = getLineHeight(fontFamily, fontSize);
   return `${fontStyle} ${fontWeight} ${fontSize}px/${lineHeight}px ${wrapFontFamily(
     fontFamily
-  )}`.trim();
+  )}, sans-serif`.trim();
 }
 
 export function normalizeText(text: string): string {
@@ -110,6 +95,26 @@ export function getLineWidth(text: string, font: string): number {
   const width = ctx.measureText(text).width;
 
   return width;
+}
+
+export function getTextRect(
+  text: string,
+  fontFamily: string,
+  fontSize: number
+): { w: number; h: number } {
+  const ctx = getMeasureCtx();
+  const font = `${fontSize}px "${fontFamily}"`;
+
+  if (font !== ctx.font) ctx.font = font;
+
+  const metrics = ctx.measureText(text);
+  const lineHeight =
+    metrics.fontBoundingBoxAscent + metrics.fontBoundingBoxDescent;
+
+  return {
+    w: metrics.width,
+    h: lineHeight,
+  };
 }
 
 export function getTextWidth(text: string, font: string): number {
@@ -164,22 +169,6 @@ export const charWidth = (() => {
   };
 })();
 
-export const truncateTextByWidth = (
-  text: string,
-  font: string,
-  width: number
-) => {
-  let totalWidth = 0;
-  let i = 0;
-  for (; i < text.length; i++) {
-    const char = text[i];
-    totalWidth += charWidth.calculate(char, font);
-    if (totalWidth > width) {
-      break;
-    }
-  }
-  return text.slice(0, i);
-};
 export function wrapText(text: string, font: string, maxWidth: number): string {
   // if maxWidth is not finite or NaN which can happen in case of bugs in
   // computation, we need to make sure we don't continue as we'll end up
@@ -310,152 +299,4 @@ export function wrapText(text: string, font: string, maxWidth: number): string {
     }
   });
   return lines.join('\n');
-}
-
-function transformDelta(delta: ITextDelta): (ITextDelta | '\n')[] {
-  const result: (ITextDelta | '\n')[] = [];
-
-  let tmpString = delta.insert;
-  while (tmpString.length > 0) {
-    const index = tmpString.indexOf('\n');
-    if (index === -1) {
-      result.push({
-        insert: tmpString,
-        attributes: delta.attributes,
-      });
-      break;
-    }
-
-    if (tmpString.slice(0, index).length > 0) {
-      result.push({
-        insert: tmpString.slice(0, index),
-        attributes: delta.attributes,
-      });
-    }
-
-    result.push('\n');
-    tmpString = tmpString.slice(index + 1);
-  }
-
-  return result;
-}
-
-/**
- * convert a delta insert array to chunks, each chunk is a line
- */
-export function deltaInsertsToChunks(delta: ITextDelta[]): ITextDelta[][] {
-  if (delta.length === 0) {
-    return [[]];
-  }
-
-  const transformedDelta = delta.flatMap(transformDelta);
-
-  function* chunksGenerator(arr: (ITextDelta | '\n')[]) {
-    let start = 0;
-    for (let i = 0; i < arr.length; i++) {
-      if (arr[i] === '\n') {
-        const chunk = arr.slice(start, i);
-        start = i + 1;
-        yield chunk as ITextDelta[];
-      } else if (i === arr.length - 1) {
-        yield arr.slice(start) as ITextDelta[];
-      }
-    }
-
-    if (arr.at(-1) === '\n') {
-      yield [];
-    }
-  }
-
-  return Array.from(chunksGenerator(transformedDelta));
-}
-
-export function normalizeTextBound(
-  text: TextElement,
-  bound: Bound,
-  dragging: boolean = false
-): Bound {
-  if (!text.text) return bound;
-
-  const yText = text.text;
-  const { fontStyle, fontWeight, fontSize, fontFamily } = text;
-  const lineHeightPx = getLineHeight(fontFamily, fontSize);
-  const font = getFontString({
-    fontStyle,
-    fontWeight,
-    fontSize,
-    fontFamily,
-  });
-
-  let lines: ITextDelta[][] = [];
-  const deltas: ITextDelta[] = yText.toDelta() as ITextDelta[];
-  const widestCharWidth =
-    [...yText.toString()]
-      .map(char => getTextWidth(char, font))
-      .sort((a, b) => a - b)
-      .pop() ?? getTextWidth('W', font);
-
-  if (bound.w < widestCharWidth) {
-    bound.w = widestCharWidth;
-  }
-
-  const width = bound.w;
-  const insertDeltas = deltas.flatMap(delta => ({
-    insert: wrapText(delta.insert, font, width),
-    attributes: delta.attributes,
-  })) as ITextDelta[];
-  lines = deltaInsertsToChunks(insertDeltas);
-  if (!dragging && !text.hasMaxWidth) {
-    lines = deltaInsertsToChunks(deltas);
-    const widestLineWidth = Math.max(
-      ...yText
-        .toString()
-        .split('\n')
-        .map(text => getTextWidth(text, font))
-    );
-    bound.w = widestLineWidth;
-  }
-  bound.h = lineHeightPx * lines.length;
-
-  return bound;
-}
-
-export function getFontFacesByFontFamily(
-  fontFamily: CanvasTextFontFamily
-): FontFace[] {
-  const fonts = document.fonts;
-  return (
-    [...fonts.keys()]
-      .filter(fontFace => {
-        return fontFace.family === fontFamily;
-      })
-      // remove duplicate font faces
-      .filter(
-        (item, index, arr) =>
-          arr.findIndex(
-            fontFace =>
-              fontFace.family === item.family &&
-              fontFace.weight === item.weight &&
-              fontFace.style === item.style
-          ) === index
-      )
-  );
-}
-
-export function isFontWeightSupported(
-  fontFamily: CanvasTextFontFamily,
-  weight: CanvasTextFontWeight
-) {
-  const fontFaces = getFontFacesByFontFamily(fontFamily);
-  const fontFace = fontFaces.find(fontFace => fontFace.weight === weight);
-  return !!fontFace;
-}
-
-export function isFontStyleSupported(
-  fontFamily: CanvasTextFontFamily,
-  style: CanvasTextFontStyle
-) {
-  const fontFaces = getFontFacesByFontFamily(fontFamily);
-  const fontFace = fontFaces.find(fontFace => fontFace.style === style);
-  return !!fontFace;
 }

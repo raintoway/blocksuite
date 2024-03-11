@@ -1,71 +1,5 @@
-import type { BaseBlockModel, Page } from '@blocksuite/store';
-
-import type {
-  AttachmentBlockModel,
-  AttachmentBlockSchema,
-  BookmarkBlockModel,
-  BookmarkBlockSchema,
-  CodeBlockModel,
-  CodeBlockSchema,
-  DatabaseBlockModel,
-  DatabaseBlockSchema,
-  DataViewBlockModel,
-  DataViewBlockSchema,
-  DividerBlockModel,
-  DividerBlockSchema,
-  FrameBlockModel,
-  FrameBlockSchema,
-  ImageBlockModel,
-  ImageBlockSchema,
-  ListBlockModel,
-  ListBlockSchema,
-  NoteBlockModel,
-  NoteBlockSchema,
-  PageBlockModel,
-  PageBlockSchema,
-  ParagraphBlockModel,
-  ParagraphBlockSchema,
-  SurfaceBlockModel,
-  SurfaceBlockSchema,
-  SurfaceRefBlockModel,
-} from '../../index.js';
-
-export type BlockModels = {
-  'affine:paragraph': ParagraphBlockModel;
-  'affine:page': PageBlockModel;
-  'affine:list': ListBlockModel;
-  'affine:note': NoteBlockModel;
-  'affine:code': CodeBlockModel;
-  'affine:divider': DividerBlockModel;
-  'affine:image': ImageBlockModel;
-  'affine:surface': SurfaceBlockModel;
-  'affine:frame': FrameBlockModel;
-  'affine:database': DatabaseBlockModel;
-  'affine:data-view': DataViewBlockModel;
-  'affine:bookmark': BookmarkBlockModel;
-  'affine:attachment': AttachmentBlockModel;
-  'affine:surface-ref': SurfaceRefBlockModel;
-};
-
-export type BlockSchemas = {
-  'affine:paragraph': typeof ParagraphBlockSchema;
-  'affine:page': typeof PageBlockSchema;
-  'affine:list': typeof ListBlockSchema;
-  'affine:note': typeof NoteBlockSchema;
-  'affine:code': typeof CodeBlockSchema;
-  'affine:divider': typeof DividerBlockSchema;
-  'affine:image': typeof ImageBlockSchema;
-  'affine:surface': typeof SurfaceBlockSchema;
-  'affine:frame': typeof FrameBlockSchema;
-  'affine:database': typeof DatabaseBlockSchema;
-  'affine:data-view': typeof DataViewBlockSchema;
-  'affine:bookmark': typeof BookmarkBlockSchema;
-  'affine:attachment': typeof AttachmentBlockSchema;
-};
-
-export type BlockModelProps = {
-  [K in keyof BlockSchemas]: ReturnType<BlockSchemas[K]['model']['props']>;
-};
+import type { BlockModel, Doc } from '@blocksuite/store';
+import { minimatch } from 'minimatch';
 
 export function assertFlavours(model: { flavour: string }, allowed: string[]) {
   if (!allowed.includes(model.flavour)) {
@@ -73,24 +7,29 @@ export function assertFlavours(model: { flavour: string }, allowed: string[]) {
   }
 }
 
-export function matchFlavours<Key extends (keyof BlockModels)[]>(
-  model: BaseBlockModel | null,
+export function matchFlavours<Key extends (keyof BlockSuite.BlockModels)[]>(
+  model: BlockModel | null,
   expected: Key
-): model is BlockModels[Key[number]] {
-  return !!model && expected.includes(model.flavour as keyof BlockModels);
+): model is BlockSuite.BlockModels[Key[number]] {
+  return (
+    !!model &&
+    expected.some(key =>
+      minimatch(model.flavour as keyof BlockSuite.BlockModels, key)
+    )
+  );
 }
 
 export function isInsideBlockByFlavour(
-  page: Page,
-  block: BaseBlockModel | string,
+  doc: Doc,
+  block: BlockModel | string,
   flavour: string
 ): boolean {
-  const parent = page.getParent(block);
+  const parent = doc.getParent(block);
   if (parent === null) {
     return false;
   }
   if (flavour === parent.flavour) {
     return true;
   }
-  return isInsideBlockByFlavour(page, parent, flavour);
+  return isInsideBlockByFlavour(doc, parent, flavour);
 }

@@ -2,7 +2,7 @@ import '../card/frame-card.js';
 
 import {
   Bound,
-  type EdgelessPageBlockComponent,
+  type EdgelessRootBlockComponent,
   type FrameBlockModel,
   generateKeyBetween,
 } from '@blocksuite/blocks';
@@ -12,9 +12,10 @@ import {
   ShadowlessElement,
   WithDisposable,
 } from '@blocksuite/lit';
-import type { Page } from '@blocksuite/store';
+import type { Doc } from '@blocksuite/store';
 import { css, html, nothing, type PropertyValues } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
+import { repeat } from 'lit/directives/repeat.js';
 
 import type {
   DragEvent,
@@ -83,16 +84,13 @@ export class FramePanelBody extends WithDisposable(ShadowlessElement) {
   static override styles = styles;
 
   @property({ attribute: false })
-  edgeless: EdgelessPageBlockComponent | null = null;
+  edgeless: EdgelessRootBlockComponent | null = null;
 
   @property({ attribute: false })
-  page!: Page;
+  doc!: Doc;
 
   @property({ attribute: false })
   editorHost!: EditorHost;
-
-  @property({ attribute: false })
-  changeEditorMode!: (mode: 'page' | 'edgeless') => void;
 
   // Store the ids of the selected frames
   @state()
@@ -116,11 +114,11 @@ export class FramePanelBody extends WithDisposable(ShadowlessElement) {
   private _frameItems: FrameListItem[] = [];
   private _frameElementHeight = 0;
   private _indicatorTranslateY = 0;
-  private _pageDisposables: DisposableGroup | null = null;
-  private _lastEdgelessPageId = '';
+  private _docDisposables: DisposableGroup | null = null;
+  private _lastEdgelessRootId = '';
 
   get frames() {
-    const frames = this.page.getBlockByFlavour(
+    const frames = this.doc.getBlockByFlavour(
       'affine:frame'
     ) as FrameBlockModel[];
     return frames.sort(this.compare);
@@ -140,16 +138,16 @@ export class FramePanelBody extends WithDisposable(ShadowlessElement) {
     return 0;
   }
 
-  private _clearPageDisposables = () => {
-    this._pageDisposables?.dispose();
-    this._pageDisposables = null;
+  private _clearDocDisposables = () => {
+    this._docDisposables?.dispose();
+    this._docDisposables = null;
   };
 
-  private _setPageDisposables(page: Page) {
-    this._clearPageDisposables();
-    this._pageDisposables = new DisposableGroup();
-    this._pageDisposables.add(
-      page.slots.blockUpdated.on(({ flavour }) => {
+  private _setDocDisposables(doc: Doc) {
+    this._clearDocDisposables();
+    this._docDisposables = new DisposableGroup();
+    this._docDisposables.add(
+      doc.slots.blockUpdated.on(({ flavour }) => {
         if (flavour === 'affine:frame') {
           requestAnimationFrame(() => {
             this._updateFrames();
@@ -210,13 +208,13 @@ export class FramePanelBody extends WithDisposable(ShadowlessElement) {
       const after = frames[insertIndex]?.index || null;
       selectedFrames.forEach(frame => {
         const newIndex = generateKeyBetween(before, after);
-        frame.page.updateBlock(frame, {
+        frame.doc.updateBlock(frame, {
           index: newIndex,
         });
         before = newIndex;
       });
 
-      this.page.captureSync();
+      this.doc.captureSync();
       this._updateFrames();
     }
   }
@@ -233,7 +231,7 @@ export class FramePanelBody extends WithDisposable(ShadowlessElement) {
       this._selected = [id];
     }
 
-    this.edgeless?.selectionManager.setSelection({
+    this.edgeless?.service.selection.set({
       elements: this._selected,
       editing: false,
     });
@@ -251,15 +249,12 @@ export class FramePanelBody extends WithDisposable(ShadowlessElement) {
         referenceId: block.id,
         padding: this.viewportPadding as [number, number, number, number],
       };
-      this.editorHost.std.command
-        .pipe()
-        .withHost()
-        .saveViewportToSession({ viewport })
-        .run();
 
-      this.changeEditorMode('edgeless');
+      const rootService = this.editorHost.spec.getService('affine:page');
+      rootService.editSession.setItem('viewport', viewport);
+      rootService.slots.editorModeSwitch.emit('edgeless');
     } else {
-      this.edgeless.surface.viewport.setViewportByBound(
+      this.edgeless.service.viewport.setViewportByBound(
         bound,
         this.viewportPadding,
         true
@@ -299,7 +294,7 @@ export class FramePanelBody extends WithDisposable(ShadowlessElement) {
     startDragging(draggedFramesInfo, {
       width,
       container: this,
-      doc: this.ownerDocument,
+      document: this.ownerDocument,
       domHost: this.domHost ?? this.ownerDocument,
       start: {
         x: e.detail.clientX,
@@ -309,7 +304,7 @@ export class FramePanelBody extends WithDisposable(ShadowlessElement) {
       frameListContainer: this.frameListContainer,
       frameElementHeight: this._frameElementHeight,
       edgeless: this.edgeless,
-      page: this.page,
+      doc: this.doc,
       editorHost: this.editorHost,
       onDragEnd: insertIdx => {
         this._dragging = false;
@@ -330,7 +325,7 @@ export class FramePanelBody extends WithDisposable(ShadowlessElement) {
    */
   private _clickBlank = (e: MouseEvent) => {
     e.stopPropagation();
-    // check if click at toc-card, if not, set this._selected to empty
+    // check if click at frame-card, if not, set this._selected to empty
     if (
       (e.target as HTMLElement).closest('frame-card') ||
       this._selected.length === 0
@@ -339,7 +334,7 @@ export class FramePanelBody extends WithDisposable(ShadowlessElement) {
     }
 
     this._selected = [];
-    this.edgeless?.selectionManager.setSelection({
+    this.edgeless?.service.selection.set({
       elements: this._selected,
       editing: false,
     });
@@ -365,17 +360,20 @@ export class FramePanelBody extends WithDisposable(ShadowlessElement) {
 
   private _renderFrameList() {
     const selectedFrames = new Set(this._selected);
-    const frameCards = this._frameItems.map(
-      (frameItem, idx) =>
-        html`<frame-card
-          data-frame-id=${frameItem.frame.id}
+    const frameCards = html`${repeat(
+      this._frameItems,
+      frameItem => [frameItem.frame.id, frameItem.cardIndex].join('-'),
+      frameItem => {
+        const { frame, frameIndex, cardIndex } = frameItem;
+        return html`<frame-card
+          data-frame-id=${frame.id}
           .edgeless=${this.edgeless}
-          .page=${this.page}
+          .doc=${this.doc}
           .host=${this.editorHost}
-          .frame=${frameItem.frame}
-          .cardIndex=${idx}
-          .frameIndex=${frameItem.frameIndex}
-          .status=${selectedFrames.has(frameItem.frame.id)
+          .frame=${frame}
+          .cardIndex=${cardIndex}
+          .frameIndex=${frameIndex}
+          .status=${selectedFrames.has(frame.id)
             ? this._dragging
               ? 'placeholder'
               : 'selected'
@@ -383,8 +381,9 @@ export class FramePanelBody extends WithDisposable(ShadowlessElement) {
           @select=${this._selectFrame}
           @fitview=${this._fitToElement}
           @drag=${this._drag}
-        ></frame-card>`
-    );
+        ></frame-card>`;
+      }
+    )}`;
 
     const frameList = html` <div class="frame-list-container">
       ${this.insertIndex !== undefined
@@ -404,21 +403,21 @@ export class FramePanelBody extends WithDisposable(ShadowlessElement) {
   }
 
   override updated(_changedProperties: PropertyValues) {
-    if (_changedProperties.has('page') || _changedProperties.has('edgeless')) {
-      this._setPageDisposables(this.page);
+    if (_changedProperties.has('doc') || _changedProperties.has('edgeless')) {
+      this._setDocDisposables(this.doc);
     }
 
     if (_changedProperties.has('edgeless') && this.edgeless) {
       // after switch to edgeless mode, should update the selection
-      if (this.edgeless.model.id === this._lastEdgelessPageId) {
-        this.edgeless.selectionManager.setSelection({
+      if (this.edgeless.model.id === this._lastEdgelessRootId) {
+        this.edgeless.service.selection.set({
           elements: this._selected,
           editing: false,
         });
       } else {
         this._selected = [];
       }
-      this._lastEdgelessPageId = this.edgeless.model.id;
+      this._lastEdgelessRootId = this.edgeless.model.id;
     }
   }
 
@@ -426,13 +425,13 @@ export class FramePanelBody extends WithDisposable(ShadowlessElement) {
     super.connectedCallback();
     this._updateFrameItems();
     if (this.edgeless) {
-      this._lastEdgelessPageId = this.edgeless.model.id;
+      this._lastEdgelessRootId = this.edgeless.model.id;
     }
   }
 
   override disconnectedCallback() {
     super.disconnectedCallback();
-    this._clearPageDisposables();
+    this._clearDocDisposables();
   }
 
   override render() {

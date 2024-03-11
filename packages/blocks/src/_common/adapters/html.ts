@@ -3,36 +3,51 @@ import type { DeltaInsert } from '@blocksuite/inline';
 import type {
   FromBlockSnapshotPayload,
   FromBlockSnapshotResult,
-  FromPageSnapshotPayload,
-  FromPageSnapshotResult,
+  FromDocSnapshotPayload,
+  FromDocSnapshotResult,
   FromSliceSnapshotPayload,
   FromSliceSnapshotResult,
   ToBlockSnapshotPayload,
-  ToPageSnapshotPayload,
+  ToDocSnapshotPayload,
 } from '@blocksuite/store';
 import {
   type AssetsManager,
   BlockSnapshotSchema,
   getAssetName,
+  nanoid,
+  sha,
 } from '@blocksuite/store';
 import { ASTWalker, BaseAdapter } from '@blocksuite/store';
 import {
   type BlockSnapshot,
-  type PageSnapshot,
+  type DocSnapshot,
   type SliceSnapshot,
 } from '@blocksuite/store';
 import type { ElementContent, Root, Text } from 'hast';
+import rehypeParse from 'rehype-parse';
 import rehypeStringify from 'rehype-stringify';
-import { type IThemedToken, type Lang } from 'shiki';
+import { type BundledLanguage, type ThemedToken } from 'shiki';
 import { unified } from 'unified';
 
+import { isPlaintext } from '../../code-block/utils/code-languages.js';
+import { DARK_THEME, LIGHT_THEME } from '../../code-block/utils/consts.js';
 import { getHighLighter } from '../../code-block/utils/high-lighter.js';
 import {
   highlightCache,
   type highlightCacheKey,
 } from '../../code-block/utils/highlight-cache.js';
-import { type HtmlAST } from './hast.js';
-import { NotionHtmlAdapter } from './notion-html.js';
+import { NoteDisplayMode } from '../types.js';
+import { getFilenameFromContentDisposition } from '../utils/header-value-parser.js';
+import {
+  hastFlatNodes,
+  hastGetElementChildren,
+  hastGetTextChildren,
+  hastGetTextChildrenOnlyAst,
+  hastGetTextContent,
+  hastQuerySelector,
+  type HtmlAST,
+} from './hast.js';
+import { fetchImage, mergeDeltas } from './utils.js';
 
 export type Html = string;
 
@@ -47,18 +62,16 @@ type HtmlToSliceSnapshotPayload = {
 };
 
 export class HtmlAdapter extends BaseAdapter<Html> {
-  private _notion = new NotionHtmlAdapter();
-
-  override async fromPageSnapshot(
-    payload: FromPageSnapshotPayload
-  ): Promise<FromPageSnapshotResult<string>> {
+  override async fromDocSnapshot(
+    payload: FromDocSnapshotPayload
+  ): Promise<FromDocSnapshotResult<string>> {
     const { file, assetsIds } = await this.fromBlockSnapshot({
       snapshot: payload.snapshot.blocks,
       assets: payload.assets,
     });
     return {
       file: file.replace(
-        '<!--BlockSuitePageTitlePlaceholder-->',
+        '<!--BlockSuiteDocTitlePlaceholder-->',
         `<h1>${payload.snapshot.meta.title}</h1>`
       ),
       assetsIds,
@@ -109,25 +122,131 @@ export class HtmlAdapter extends BaseAdapter<Html> {
       assetsIds: sliceAssetsIds,
     };
   }
-  override async toPageSnapshot(
-    _payload: ToPageSnapshotPayload<string>
-  ): Promise<PageSnapshot> {
-    return this._notion.toPageSnapshot(_payload);
+  override async toDocSnapshot(
+    payload: ToDocSnapshotPayload<string>
+  ): Promise<DocSnapshot> {
+    const htmlAst = this._htmlToAst(payload.file);
+    const titleAst = hastQuerySelector(htmlAst, 'title');
+    const blockSnapshotRoot = {
+      type: 'block',
+      id: nanoid(),
+      flavour: 'affine:note',
+      props: {
+        xywh: '[0,0,800,95]',
+        background: '--affine-background-secondary-color',
+        index: 'a0',
+        hidden: false,
+        displayMode: NoteDisplayMode.DocAndEdgeless,
+      },
+      children: [],
+    };
+    return {
+      type: 'page',
+      meta: {
+        id: nanoid(),
+        title: hastGetTextContent(titleAst, 'Untitled'),
+        createDate: Date.now(),
+        tags: [],
+      },
+      blocks: {
+        type: 'block',
+        id: nanoid(),
+        flavour: 'affine:page',
+        props: {
+          title: {
+            '$blocksuite:internal:text$': true,
+            delta: this._hastToDelta(
+              titleAst ?? {
+                type: 'text',
+                value: 'Untitled',
+              }
+            ),
+          },
+        },
+        children: [
+          {
+            type: 'block',
+            id: nanoid(),
+            flavour: 'affine:surface',
+            props: {
+              elements: {},
+            },
+            children: [],
+          },
+          await this._traverseHtml(
+            htmlAst,
+            blockSnapshotRoot as BlockSnapshot,
+            payload.assets
+          ),
+        ],
+      },
+    };
   }
   override toBlockSnapshot(
-    _payload: ToBlockSnapshotPayload<string>
+    payload: ToBlockSnapshotPayload<string>
   ): Promise<BlockSnapshot> {
-    return this._notion.toBlockSnapshot(_payload);
+    const htmlAst = this._htmlToAst(payload.file);
+    const blockSnapshotRoot = {
+      type: 'block',
+      id: nanoid(),
+      flavour: 'affine:note',
+      props: {
+        xywh: '[0,0,800,95]',
+        background: '--affine-background-secondary-color',
+        index: 'a0',
+        hidden: false,
+        displayMode: NoteDisplayMode.DocAndEdgeless,
+      },
+      children: [],
+    };
+    return this._traverseHtml(
+      htmlAst,
+      blockSnapshotRoot as BlockSnapshot,
+      payload.assets
+    );
   }
   override async toSliceSnapshot(
-    _payload: HtmlToSliceSnapshotPayload
-  ): Promise<SliceSnapshot> {
-    return this._notion.toSliceSnapshot(_payload);
+    payload: HtmlToSliceSnapshotPayload
+  ): Promise<SliceSnapshot | null> {
+    const htmlAst = this._htmlToAst(payload.file);
+    const blockSnapshotRoot = {
+      type: 'block',
+      id: nanoid(),
+      flavour: 'affine:note',
+      props: {
+        xywh: '[0,0,800,95]',
+        background: '--affine-background-secondary-color',
+        index: 'a0',
+        hidden: false,
+        displayMode: NoteDisplayMode.DocAndEdgeless,
+      },
+      children: [],
+    };
+    const contentSlice = (await this._traverseHtml(
+      htmlAst,
+      blockSnapshotRoot as BlockSnapshot,
+      payload.assets
+    )) as BlockSnapshot;
+    if (contentSlice.children.length === 0) {
+      return null;
+    }
+    return {
+      type: 'slice',
+      content: [contentSlice],
+      pageVersion: payload.pageVersion,
+      workspaceVersion: payload.workspaceVersion,
+      workspaceId: payload.workspaceId,
+      pageId: payload.pageId,
+    };
   }
 
   private _astToHtml = (ast: Root) => {
     return unified().use(rehypeStringify).stringify(ast);
   };
+
+  private _htmlToAst(html: Html) {
+    return unified().use(rehypeParse).parse(html);
+  }
 
   private _traverseSnapshot = async (
     snapshot: BlockSnapshot,
@@ -229,7 +348,7 @@ export class HtmlAdapter extends BaseAdapter<Html> {
             )
             .openNode({
               type: 'comment',
-              value: 'BlockSuitePageTitlePlaceholder',
+              value: 'BlockSuiteDocTitlePlaceholder',
             })
             .closeNode();
           break;
@@ -364,10 +483,20 @@ export class HtmlAdapter extends BaseAdapter<Html> {
                     properties: {
                       className: ['quote'],
                     },
+                    children: [],
+                  },
+                  'children'
+                )
+                .openNode(
+                  {
+                    type: 'element',
+                    tagName: 'p',
+                    properties: {},
                     children: this._deltaToHast(text.delta),
                   },
                   'children'
                 )
+                .closeNode()
                 .closeNode()
                 .openNode(
                   {
@@ -484,6 +613,14 @@ export class HtmlAdapter extends BaseAdapter<Html> {
           if (!blob) {
             break;
           }
+          const isScaledImage = o.node.props.width && o.node.props.height;
+          const widthStyle = isScaledImage
+            ? {
+                width: `${o.node.props.width}px`,
+                height: `${o.node.props.height}px`,
+              }
+            : {};
+
           context
             .openNode(
               {
@@ -503,6 +640,7 @@ export class HtmlAdapter extends BaseAdapter<Html> {
                 properties: {
                   src: `assets/${blobName}`,
                   alt: blobName,
+                  ...widthStyle,
                 },
                 children: [],
               },
@@ -514,7 +652,7 @@ export class HtmlAdapter extends BaseAdapter<Html> {
         }
       }
     });
-    walker.setLeave(async (o, context) => {
+    walker.setLeave((o, context) => {
       switch (o.node.flavour) {
         case 'affine:page': {
           context.closeNode().closeNode().closeNode();
@@ -536,13 +674,398 @@ export class HtmlAdapter extends BaseAdapter<Html> {
     };
   };
 
+  private _traverseHtml = async (
+    html: HtmlAST,
+    snapshot: BlockSnapshot,
+    assets?: AssetsManager
+  ) => {
+    const walker = new ASTWalker<HtmlAST, BlockSnapshot>();
+    walker.setONodeTypeGuard(
+      (node): node is HtmlAST =>
+        'type' in (node as object) && (node as HtmlAST).type !== undefined
+    );
+    walker.setEnter(async (o, context) => {
+      if (o.node.type !== 'element') {
+        return;
+      }
+      switch (o.node.tagName) {
+        case 'header': {
+          context.skipAllChildren();
+          break;
+        }
+        case 'img': {
+          if (!assets) {
+            break;
+          }
+          const image = o.node;
+          const imageURL =
+            typeof image?.properties.src === 'string'
+              ? image.properties.src
+              : '';
+          if (imageURL) {
+            let blobId = '';
+            if (!imageURL.startsWith('http')) {
+              assets.getAssets().forEach((_value, key) => {
+                const attachmentName = getAssetName(assets.getAssets(), key);
+                if (imageURL.includes(attachmentName)) {
+                  blobId = key;
+                }
+              });
+            } else {
+              try {
+                const res = await fetchImage(
+                  imageURL,
+                  undefined,
+                  this.configs.get('imageProxy') as string
+                );
+                const clonedRes = res.clone();
+                const name =
+                  getFilenameFromContentDisposition(
+                    res.headers.get('Content-Disposition') ?? ''
+                  ) ??
+                  (imageURL.split('/').at(-1) ?? 'image') +
+                    '.' +
+                    (res.headers.get('Content-Type')?.split('/').at(-1) ??
+                      'png');
+                const file = new File([await res.blob()], name);
+                blobId = await sha(await clonedRes.arrayBuffer());
+                assets?.getAssets().set(blobId, file);
+                await assets?.writeToBlob(blobId);
+              } catch (_) {
+                break;
+              }
+            }
+            context
+              .openNode(
+                {
+                  type: 'block',
+                  id: nanoid(),
+                  flavour: 'affine:image',
+                  props: {
+                    sourceId: blobId,
+                  },
+                  children: [],
+                },
+                'children'
+              )
+              .closeNode();
+            context.skipAllChildren();
+            break;
+          }
+          break;
+        }
+        case 'pre': {
+          const code = hastQuerySelector(o.node, 'code');
+          if (!code) {
+            break;
+          }
+          const codeText =
+            code.children.length === 1 && code.children[0].type === 'text'
+              ? code.children[0]
+              : { ...code, tagName: 'div' };
+          let codeLang = Array.isArray(code.properties?.className)
+            ? code.properties.className.find(
+                className =>
+                  typeof className === 'string' && className.startsWith('code-')
+              )
+            : undefined;
+          codeLang =
+            typeof codeLang === 'string'
+              ? codeLang.replace('code-', '')
+              : undefined;
+          context
+            .openNode(
+              {
+                type: 'block',
+                id: nanoid(),
+                flavour: 'affine:code',
+                props: {
+                  language: codeLang ?? 'Plain Text',
+                  text: {
+                    '$blocksuite:internal:text$': true,
+                    delta: this._hastToDelta(codeText, { trim: false }),
+                  },
+                },
+                children: [],
+              },
+              'children'
+            )
+            .closeNode();
+          context.skipAllChildren();
+          break;
+        }
+        case 'blockquote': {
+          context.setGlobalContext('hast:blockquote', true);
+          // Special case for no paragraph in blockquote
+          const texts = hastGetTextChildren(o.node);
+          // check if only blank text
+          const onlyBlankText = texts.every(text => !text.value.trim());
+          if (texts && !onlyBlankText) {
+            context
+              .openNode(
+                {
+                  type: 'block',
+                  id: nanoid(),
+                  flavour: 'affine:paragraph',
+                  props: {
+                    type: 'quote',
+                    text: {
+                      '$blocksuite:internal:text$': true,
+                      delta: this._hastToDelta(
+                        hastGetTextChildrenOnlyAst(o.node)
+                      ),
+                    },
+                  },
+                  children: [],
+                },
+                'children'
+              )
+              .closeNode();
+          }
+          break;
+        }
+        case 'body':
+        case 'div': {
+          if (
+            // Check if it is a paragraph like div
+            o.parent?.type === 'element' &&
+            o.parent.tagName !== 'li' &&
+            (hastGetElementChildren(o.node).every(child =>
+              [
+                'span',
+                'strong',
+                'em',
+                'code',
+                'del',
+                'u',
+                'a',
+                'mark',
+                'br',
+              ].includes(child.tagName)
+            ) ||
+              o.node.children
+                .map(child => child.type)
+                .every(type => type === 'text'))
+          ) {
+            context
+              .openNode(
+                {
+                  type: 'block',
+                  id: nanoid(),
+                  flavour: 'affine:paragraph',
+                  props: {
+                    type: 'text',
+                    text: {
+                      '$blocksuite:internal:text$': true,
+                      delta: this._hastToDelta(o.node),
+                    },
+                  },
+                  children: [],
+                },
+                'children'
+              )
+              .closeNode();
+            context.skipAllChildren();
+          }
+          break;
+        }
+        case 'p': {
+          context.openNode(
+            {
+              type: 'block',
+              id: nanoid(),
+              flavour: 'affine:paragraph',
+              props: {
+                type: context.getGlobalContext('hast:blockquote')
+                  ? 'quote'
+                  : 'text',
+                text: {
+                  '$blocksuite:internal:text$': true,
+                  delta: this._hastToDelta(o.node),
+                },
+              },
+              children: [],
+            },
+            'children'
+          );
+          break;
+        }
+        case 'ul':
+        case 'ol': {
+          context.setNodeContext('hast:list:type', 'bulleted');
+          if (o.node.tagName === 'ol') {
+            context.setNodeContext('hast:list:type', 'numbered');
+          } else if (Array.isArray(o.node.properties?.className)) {
+            if (o.node.properties.className.includes('to-do-list')) {
+              context.setNodeContext('hast:list:type', 'todo');
+            } else if (o.node.properties.className.includes('toggle')) {
+              context.setNodeContext('hast:list:type', 'toggle');
+            } else if (o.node.properties.className.includes('bulleted-list')) {
+              context.setNodeContext('hast:list:type', 'bulleted');
+            }
+          }
+          break;
+        }
+        case 'li': {
+          const firstElementChild = hastGetElementChildren(o.node)[0];
+          const listType = context.getNodeContext('hast:list:type');
+          o.node = hastFlatNodes(
+            o.node,
+            tagName => tagName === 'div' || tagName === 'p'
+          );
+          context.openNode(
+            {
+              type: 'block',
+              id: nanoid(),
+              flavour: 'affine:list',
+              props: {
+                type: listType,
+                text: {
+                  '$blocksuite:internal:text$': true,
+                  delta:
+                    listType !== 'toggle'
+                      ? this._hastToDelta(o.node)
+                      : this._hastToDelta(
+                          hastQuerySelector(o.node, 'summary') ?? o.node
+                        ),
+                },
+                checked:
+                  listType === 'todo'
+                    ? firstElementChild &&
+                      Array.isArray(firstElementChild.properties?.className) &&
+                      firstElementChild.properties.className.includes(
+                        'checkbox-on'
+                      )
+                    : false,
+                collapsed:
+                  listType === 'toggle'
+                    ? firstElementChild &&
+                      firstElementChild.tagName === 'details' &&
+                      firstElementChild.properties.open === undefined
+                    : false,
+              },
+              children: [],
+            },
+            'children'
+          );
+          break;
+        }
+        case 'hr': {
+          context
+            .openNode(
+              {
+                type: 'block',
+                id: nanoid(),
+                flavour: 'affine:divider',
+                props: {},
+                children: [],
+              },
+              'children'
+            )
+            .closeNode();
+          break;
+        }
+        case 'h1':
+        case 'h2':
+        case 'h3':
+        case 'h4':
+        case 'h5':
+        case 'h6': {
+          context
+            .openNode(
+              {
+                type: 'block',
+                id: nanoid(),
+                flavour: 'affine:paragraph',
+                props: {
+                  type: o.node.tagName,
+                  text: {
+                    '$blocksuite:internal:text$': true,
+                    delta: this._hastToDelta(o.node),
+                  },
+                },
+                children: [],
+              },
+              'children'
+            )
+            .closeNode();
+          break;
+        }
+      }
+    });
+    walker.setLeave((o, context) => {
+      if (o.node.type !== 'element') {
+        return;
+      }
+      switch (o.node.tagName) {
+        case 'div': {
+          if (
+            o.parent?.type === 'element' &&
+            o.parent.tagName !== 'li' &&
+            Array.isArray(o.node.properties?.className)
+          ) {
+            if (
+              o.node.properties.className.includes(
+                'affine-block-children-container'
+              ) ||
+              o.node.properties.className.includes('indented')
+            ) {
+              context.closeNode();
+            }
+          }
+          break;
+        }
+        case 'blockquote': {
+          context.setGlobalContext('hast:blockquote', false);
+          break;
+        }
+        case 'p': {
+          if (
+            o.parent!.type === 'element' &&
+            o.parent!.children.length > o.index! + 1
+          ) {
+            const next = o.parent!.children[o.index! + 1];
+            if (
+              next.type === 'element' &&
+              next.tagName === 'div' &&
+              Array.isArray(next.properties?.className) &&
+              (next.properties.className.includes(
+                'affine-block-children-container'
+              ) ||
+                next.properties.className.includes('indented'))
+            ) {
+              // Close the node when leaving div indented
+              break;
+            }
+          }
+          context.closeNode();
+          break;
+        }
+        case 'li': {
+          context.closeNode();
+          break;
+        }
+      }
+    });
+    return walker.walk(html, snapshot);
+  };
+
   private _deltaToHigglightHasts = async (
     deltas: DeltaInsert[],
     rawLang: unknown
   ) => {
-    assertEquals(deltas.length, 1);
+    deltas = deltas.reduce((acc, cur) => {
+      return mergeDeltas(acc, cur, { force: true });
+    }, [] as DeltaInsert<object>[]);
+    assertEquals(deltas.length, 1, 'Delta length should be 1 in code block');
     const delta = deltas[0];
-    if (rawLang === 'Plain Text' || rawLang === 'Text' || !rawLang) {
+    if (
+      !rawLang ||
+      typeof rawLang !== 'string' ||
+      isPlaintext(rawLang) ||
+      // The rawLang should not be 'Text' here
+      rawLang === 'Text'
+    ) {
       return [
         {
           type: 'text',
@@ -550,26 +1073,29 @@ export class HtmlAdapter extends BaseAdapter<Html> {
         } as Text,
       ];
     }
-    const lang = rawLang as Lang;
+    const lang = rawLang as BundledLanguage;
+
     const highlighter = await getHighLighter({
       langs: [lang],
+      themes: [LIGHT_THEME, DARK_THEME],
     });
     const cacheKey: highlightCacheKey = `${delta.insert}-${rawLang}-light`;
     const cache = highlightCache.get(cacheKey);
 
-    let tokens: IThemedToken[];
+    let tokens: Omit<ThemedToken, 'offset'>[];
     if (cache) {
       tokens = cache;
     } else {
-      tokens = highlighter
-        .codeToThemedTokens(delta.insert, lang)
-        .reduce((acc, cur, index) => {
+      tokens = highlighter.codeToTokensBase(delta.insert, { lang }).reduce(
+        (acc, cur, index) => {
           if (index === 0) {
             return cur;
           }
 
           return [...acc, { content: '\n', color: 'inherit' }, ...cur];
-        }, []);
+        },
+        [] as Omit<ThemedToken, 'offset'>[]
+      );
       highlightCache.set(cacheKey, tokens);
     }
 
@@ -650,5 +1176,128 @@ export class HtmlAdapter extends BaseAdapter<Html> {
       }
       return hast;
     });
+  };
+
+  private _hastToDeltaSpreaded = (
+    ast: HtmlAST,
+    option: {
+      trim?: boolean;
+    } = { trim: true }
+  ): DeltaInsert<object>[] => {
+    if (option.trim === undefined) {
+      option.trim = true;
+    }
+    switch (ast.type) {
+      case 'text': {
+        if (option.trim) {
+          if (ast.value.trim()) {
+            return [{ insert: ast.value.trim() }];
+          }
+          return [];
+        }
+        if (ast.value) {
+          return [{ insert: ast.value }];
+        }
+        return [];
+      }
+      case 'element': {
+        switch (ast.tagName) {
+          case 'ol':
+          case 'ul': {
+            return [];
+          }
+          case 'span': {
+            return ast.children.flatMap(child =>
+              this._hastToDeltaSpreaded(child, { trim: false })
+            );
+          }
+          case 'strong': {
+            return ast.children.flatMap(child =>
+              this._hastToDeltaSpreaded(child, { trim: false }).map(delta => {
+                delta.attributes = { ...delta.attributes, bold: true };
+                return delta;
+              })
+            );
+          }
+          case 'em': {
+            return ast.children.flatMap(child =>
+              this._hastToDeltaSpreaded(child, { trim: false }).map(delta => {
+                delta.attributes = { ...delta.attributes, italic: true };
+                return delta;
+              })
+            );
+          }
+          case 'code': {
+            return ast.children.flatMap(child =>
+              this._hastToDeltaSpreaded(child, { trim: false }).map(delta => {
+                delta.attributes = { ...delta.attributes, code: true };
+                return delta;
+              })
+            );
+          }
+          case 'del': {
+            return ast.children.flatMap(child =>
+              this._hastToDeltaSpreaded(child, { trim: false }).map(delta => {
+                delta.attributes = { ...delta.attributes, strike: true };
+                return delta;
+              })
+            );
+          }
+          case 'u': {
+            return ast.children.flatMap(child =>
+              this._hastToDeltaSpreaded(child, { trim: false }).map(delta => {
+                delta.attributes = { ...delta.attributes, underline: true };
+                return delta;
+              })
+            );
+          }
+          case 'a': {
+            const href = ast.properties?.href;
+            if (typeof href !== 'string') {
+              return [];
+            }
+            return ast.children.flatMap(child =>
+              this._hastToDeltaSpreaded(child, { trim: false }).map(delta => {
+                if (href.startsWith('http')) {
+                  delta.attributes = {
+                    ...delta.attributes,
+                    link: href,
+                  };
+                  return delta;
+                }
+                return delta;
+              })
+            );
+          }
+          case 'mark': {
+            // TODO: add support for highlight
+            return ast.children.flatMap(child =>
+              this._hastToDeltaSpreaded(child, { trim: false }).map(delta => {
+                delta.attributes = { ...delta.attributes };
+                return delta;
+              })
+            );
+          }
+          case 'br': {
+            return [{ insert: '\n' }];
+          }
+        }
+      }
+    }
+    return 'children' in ast
+      ? ast.children.flatMap(child => this._hastToDeltaSpreaded(child, option))
+      : [];
+  };
+
+  private _hastToDelta = (
+    ast: HtmlAST,
+    option: {
+      trim?: boolean;
+      pageMap?: Map<string, string>;
+    } = { trim: true }
+  ): DeltaInsert<object>[] => {
+    return this._hastToDeltaSpreaded(ast, option).reduce((acc, cur) => {
+      return mergeDeltas(acc, cur);
+    }, [] as DeltaInsert<object>[]);
   };
 }

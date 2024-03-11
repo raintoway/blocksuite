@@ -2,7 +2,6 @@ import './utils/declare-test-window.js';
 
 import { expect } from '@playwright/test';
 
-// eslint-disable-next-line @typescript-eslint/no-restricted-imports
 import { initDatabaseColumn } from './database/actions.js';
 import {
   activeNoteInEdgeless,
@@ -76,8 +75,8 @@ import {
 } from './utils/asserts.js';
 import { scoped, test } from './utils/playwright.js';
 
-// eslint-disable-next-line no-empty-pattern
-test.beforeEach(async ({}, testInfo) => {
+test.beforeEach(({ page }, testInfo) => {
+  page;
   testInfo.snapshotSuffix = '';
 });
 
@@ -387,12 +386,8 @@ test(scoped`copy clipItems format`, async ({ page }) => {
   await pasteContent(page, { 'text/plain': clipData });
   await page.waitForTimeout(100);
   await setSelection(page, 4, 1, 5, 1);
-  await assertClipItems(page, 'text/plain', 'bc');
-  await assertClipItems(
-    page,
-    'text/html',
-    '<ul><li>b<ul><li>c</li></ul></li></ul>'
-  );
+  assertClipItems(page, 'text/plain', 'bc');
+  assertClipItems(page, 'text/html', '<ul><li>b<ul><li>c</li></ul></li></ul>');
   await undoByClick(page);
   await assertRichTexts(page, ['']);
 });
@@ -407,7 +402,7 @@ test(scoped`copy partially selected text`, async ({ page }) => {
   // select 456
   await setInlineRangeInSelectedRichText(page, 4, 3);
   await copyByKeyboard(page);
-  await assertClipItems(page, 'text/plain', '456');
+  assertClipItems(page, 'text/plain', '456');
 
   // move to line end
   await setInlineRangeInSelectedRichText(page, 11, 0);
@@ -425,7 +420,7 @@ test(scoped`copy & paste outside editor`, async ({ page }) => {
     const input = document.createElement('input');
     input.setAttribute('id', 'input-test');
     input.value = '123';
-    document.body.querySelector('#app')?.appendChild(input);
+    document.body.querySelector('#app')?.append(input);
   });
   await page.focus('#input-test');
   await page.dblclick('#input-test');
@@ -759,7 +754,7 @@ test(scoped`cut should work for multi-block selection`, async ({ page }) => {
   await selectAllByKeyboard(page);
   await selectAllByKeyboard(page);
   await cutByKeyboard(page);
-  await page.locator('.affine-doc-viewport').click();
+  await page.locator('.affine-page-viewport').click();
   await waitNextFrame(page);
   await assertText(page, '');
 });
@@ -814,6 +809,7 @@ test.skip('cut will delete all content, and copy will reappear content', async (
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -874,6 +870,7 @@ test.skip('cut will delete all content, and copy will reappear content', async (
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -925,7 +922,7 @@ test(scoped`should copy and paste of database work`, async ({ page }) => {
   await initDatabaseColumn(page);
   await initDatabaseDynamicRowWithData(page, 'abc', true);
   await pressEscape(page);
-  await focusRichText(page, 1);
+  await focusRichText(page, 2);
   await selectAllByKeyboard(page);
   await selectAllByKeyboard(page);
   await copyByKeyboard(page);
@@ -939,6 +936,7 @@ test(scoped`should copy and paste of database work`, async ({ page }) => {
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -984,6 +982,7 @@ test(scoped`should copy and paste of database work`, async ({ page }) => {
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -1112,7 +1111,7 @@ test(
       const input = document.createElement('input');
       input.setAttribute('id', 'input-test');
       input.value = '123';
-      document.body.querySelector('#app')?.appendChild(input);
+      document.body.querySelector('#app')?.append(input);
     });
     await page.focus('#input-test');
     await page.dblclick('#input-test');
@@ -1126,6 +1125,7 @@ test(
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -1160,6 +1160,7 @@ test(
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -1279,6 +1280,7 @@ test(scoped`auto identify url`, async ({ page }) => {
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {

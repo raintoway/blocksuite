@@ -190,6 +190,7 @@ export class MultiTagSelect extends WithDisposable(ShadowlessElement) {
         }, 4);
       }
     }
+    this.text = '';
   };
 
   private _createOption = () => {
@@ -203,7 +204,7 @@ export class MultiTagSelect extends WithDisposable(ShadowlessElement) {
     const tagColor = this.color;
     this.clearColor();
     const newSelect: SelectTag = {
-      id: nanoid('unknown'),
+      id: nanoid(),
       value: name,
       color: tagColor,
       parentId: groupInfo.parent?.id,
@@ -455,6 +456,7 @@ declare global {
     'affine-multi-tag-select': MultiTagSelect;
   }
 }
+
 export const popTagSelect = (
   target: HTMLElement,
   ops: {
@@ -495,6 +497,7 @@ export const popTagSelect = (
   });
   return remove;
 };
+
 const middleware: Middleware = {
   name: 'middleware',
   fn: async state => {

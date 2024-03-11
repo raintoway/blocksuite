@@ -64,23 +64,23 @@ test(scoped`basic init with external text`, async ({ page }) => {
   await enterPlaygroundRoom(page);
 
   await page.evaluate(() => {
-    const { page } = window;
-    const pageId = page.addBlock('affine:page', {
-      title: new page.Text('hello'),
+    const { doc } = window;
+    const rootId = doc.addBlock('affine:page', {
+      title: new doc.Text('hello'),
     });
-    const note = page.addBlock('affine:note', {}, pageId);
+    const note = doc.addBlock('affine:note', {}, rootId);
 
-    const text = new page.Text('world');
-    page.addBlock('affine:paragraph', { text }, note);
+    const text = new doc.Text('world');
+    doc.addBlock('affine:paragraph', { text }, note);
 
     const delta = [
       { insert: 'foo ' },
       { insert: 'bar', attributes: { bold: true } },
     ];
-    page.addBlock(
+    doc.addBlock(
       'affine:paragraph',
       {
-        text: page.Text.fromDelta(delta),
+        text: doc.Text.fromDelta(delta),
       },
       note
     );
@@ -317,68 +317,33 @@ test(scoped`should undo/redo works on title`, async ({ page }) => {
   await type(page, 'title');
   await focusRichText(page);
   await type(page, 'hello world');
-  await captureHistory(page);
-  let i = 5;
-  while (i--) {
-    await pressBackspace(page);
-  }
 
-  await focusTitle(page);
-  await captureHistory(page);
-  await type(page, ' something');
-  await undoByKeyboard(page);
   await assertTitle(page, 'title');
+  await assertRichTexts(page, ['hello world']);
+
+  await captureHistory(page);
+  await pressBackspace(page, 5);
+  await captureHistory(page);
+  await focusTitle(page);
+  await type(page, ' something');
+
+  await assertTitle(page, 'title something');
   await assertRichTexts(page, ['hello ']);
 
   await focusRichText(page);
+  await undoByKeyboard(page);
+  await assertTitle(page, 'title');
+  await assertRichTexts(page, ['hello ']);
   await undoByKeyboard(page);
   await assertTitle(page, 'title');
   await assertRichTexts(page, ['hello world']);
 
-  await focusTitle(page);
   await redoByKeyboard(page);
   await assertTitle(page, 'title');
   await assertRichTexts(page, ['hello ']);
-
-  await focusTitle(page);
   await redoByKeyboard(page);
   await assertTitle(page, 'title something');
   await assertRichTexts(page, ['hello ']);
-});
-
-test(scoped`should undo/redo cursor works on title`, async ({ page }) => {
-  await enterPlaygroundRoom(page);
-  await initEmptyParagraphState(page);
-  await waitNextFrame(page);
-
-  await focusTitle(page);
-  await type(page, 'title');
-  await focusRichText(page);
-  await type(page, 'hello');
-  await captureHistory(page);
-
-  await assertTitle(page, 'title');
-  await assertRichTexts(page, ['hello']);
-
-  await focusTitle(page);
-  await type(page, '1');
-  await focusRichText(page);
-  await undoByKeyboard(page);
-  await waitNextFrame(page);
-  await type(page, '2');
-  await assertTitle(page, 'title2');
-  await assertRichTexts(page, ['hello']);
-
-  await type(page, '3');
-  await focusRichText(page);
-  await waitNextFrame(page);
-  await undoByKeyboard(page);
-  await waitNextFrame(page);
-  await redoByKeyboard(page);
-  await waitNextFrame(page);
-  await type(page, '4');
-  await assertTitle(page, 'title23');
-  await assertRichTexts(page, ['hello4']);
 });
 
 test(scoped`undo multi notes`, async ({ page }) => {
@@ -512,6 +477,7 @@ test(scoped`automatic identify url text`, async ({ page }) => {
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {

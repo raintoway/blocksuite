@@ -1,11 +1,11 @@
 import {
-  type EdgelessPageBlockComponent,
+  type EdgelessRootBlockComponent,
   type FrameBlockModel,
   on,
   once,
 } from '@blocksuite/blocks';
 import type { EditorHost } from '@blocksuite/lit';
-import type { Page } from '@blocksuite/store';
+import type { Doc } from '@blocksuite/store';
 
 import type { FramePanelBody } from '../body/frame-panel-body.js';
 import { FrameCard } from '../card/frame-card.js';
@@ -28,20 +28,20 @@ export function startDragging(
     framePanelBody: HTMLElement;
     frameListContainer: HTMLElement;
     frameElementHeight: number;
-    doc: Document;
+    document: Document;
     domHost: Document | HTMLElement;
     container: FramePanelBody;
     start: {
       x: number;
       y: number;
     };
-    edgeless: EdgelessPageBlockComponent | null;
-    page: Page;
+    edgeless: EdgelessRootBlockComponent | null;
+    doc: Doc;
     editorHost: EditorHost;
   }
 ) {
   const {
-    doc,
+    document,
     domHost,
     container,
     onDragMove,
@@ -51,7 +51,7 @@ export function startDragging(
     frameListContainer,
     start,
     edgeless,
-    page,
+    doc,
     editorHost,
   } = options;
   const cardElements = frames
@@ -60,7 +60,7 @@ export function startDragging(
       const el = new FrameCard();
 
       el.edgeless = edgeless;
-      el.page = page;
+      el.doc = doc;
       el.host = editorHost;
       el.frame = frame.frame;
 
@@ -75,7 +75,7 @@ export function startDragging(
 
       return el;
     });
-  const maskElement = createMaskElement(doc);
+  const maskElement = createMaskElement(document);
   const listContainerRect = framePanelBody.getBoundingClientRect();
   const children = Array.from(frameListContainer.children) as FrameCard[];
   const computedStyle = getComputedStyle(frameListContainer);
@@ -84,7 +84,7 @@ export function startDragging(
   let idx: undefined | number;
   let indicatorTranslateY: undefined | number;
 
-  container.renderRoot.appendChild(maskElement);
+  container.renderRoot.append(maskElement);
   container.renderRoot.append(...cardElements);
 
   const insideListContainer = (e: MouseEvent) => {
@@ -145,8 +145,8 @@ export function startDragging(
     if (ended) return;
 
     ended = true;
-    cardElements.forEach(child => container.renderRoot.removeChild(child));
-    container.renderRoot.removeChild(maskElement);
+    cardElements.forEach(child => child.remove());
+    maskElement.remove();
 
     disposeMove();
     onDragEnd?.(idx);

@@ -1,9 +1,12 @@
 import { assertExists } from '@blocksuite/global/utils';
-import type { JobMiddleware } from '@blocksuite/store';
+import type { DeltaOperation, JobMiddleware } from '@blocksuite/store';
 
 import type { DatabaseBlockModel } from '../../database-block/index.js';
+import type { ListBlockModel } from '../../list-block/index.js';
+import type { ParagraphBlockModel } from '../../paragraph-block/index.js';
+import { DEFAULT_IMAGE_PROXY_ENDPOINT } from '../consts.js';
 
-export const replaceIdMiddleware: JobMiddleware = ({ slots, workspace }) => {
+export const replaceIdMiddleware: JobMiddleware = ({ slots, collection }) => {
   const idMap = new Map<string, string>();
   slots.afterImport.on(payload => {
     if (
@@ -18,10 +21,51 @@ export const replaceIdMiddleware: JobMiddleware = ({ slots, workspace }) => {
         }
       });
     }
+
+    // replace LinkedPage pageId with new id in paragraph blocks
+    if (
+      payload.type === 'block' &&
+      ['affine:paragraph', 'affine:list'].includes(payload.snapshot.flavour)
+    ) {
+      const model = payload.model as ParagraphBlockModel | ListBlockModel;
+      let prev = 0;
+      const delta: DeltaOperation[] = [];
+      for (const d of model.text.toDelta()) {
+        if (d.attributes?.reference?.pageId) {
+          const newId = idMap.get(d.attributes.reference.pageId);
+          if (!newId) {
+            prev += d.insert?.length ?? 0;
+            continue;
+          }
+
+          if (prev > 0) {
+            delta.push({ retain: prev });
+          }
+
+          delta.push({
+            retain: d.insert?.length ?? 0,
+            attributes: {
+              reference: {
+                ...d.attributes.reference,
+                pageId: newId,
+              },
+            },
+          });
+          prev = 0;
+        } else {
+          prev += d.insert?.length ?? 0;
+        }
+      }
+      if (delta.length > 0) {
+        model.text.applyDelta(delta);
+      }
+    }
   });
   slots.beforeImport.on(payload => {
     if (payload.type === 'page') {
-      payload.snapshot.meta.id = workspace.idGenerator('page');
+      const newId = collection.idGenerator();
+      idMap.set(payload.snapshot.meta.id, newId);
+      payload.snapshot.meta.id = newId;
       return;
     }
 
@@ -42,7 +86,7 @@ export const replaceIdMiddleware: JobMiddleware = ({ slots, workspace }) => {
       if (idMap.has(original)) {
         newId = idMap.get(original)!;
       } else {
-        newId = workspace.idGenerator('block');
+        newId = collection.idGenerator();
         idMap.set(original, newId);
       }
       snapshot.id = newId;
@@ -54,7 +98,7 @@ export const replaceIdMiddleware: JobMiddleware = ({ slots, workspace }) => {
           if (idMap.has(original)) {
             newId = idMap.get(original)!;
           } else {
-            newId = workspace.idGenerator('block');
+            newId = collection.idGenerator();
             idMap.set(original, newId);
           }
         });
@@ -100,3 +144,28 @@ export const replaceIdMiddleware: JobMiddleware = ({ slots, workspace }) => {
     }
   });
 };
+
+export const customImageProxyMiddleware = (
+  imageProxyURL: string
+): JobMiddleware => {
+  return ({ adapterConfigs }) => {
+    adapterConfigs.set('imageProxy', imageProxyURL);
+  };
+};
+
+const imageProxyMiddlewareBuilder = () => {
+  let middleware = customImageProxyMiddleware(DEFAULT_IMAGE_PROXY_ENDPOINT);
+  return {
+    get: () => middleware,
+    set: (url: string) => {
+      middleware = customImageProxyMiddleware(url);
+    },
+  };
+};
+
+const defaultImageProxyMiddlewarBuilder = imageProxyMiddlewareBuilder();
+
+export const setImageProxyMiddlewareURL = defaultImageProxyMiddlewarBuilder.set;
+
+export const defaultImageProxyMiddleware =
+  defaultImageProxyMiddlewarBuilder.get();

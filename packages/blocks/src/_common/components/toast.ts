@@ -1,6 +1,9 @@
 import { assertExists } from '@blocksuite/global/utils';
+import type { EditorHost } from '@blocksuite/lit';
 import { baseTheme } from '@toeverything/theme';
 import { html, type TemplateResult } from 'lit';
+
+import { getRootByEditorHost } from '../utils/query.js';
 
 let ToastContainer: HTMLDivElement | null = null;
 
@@ -20,7 +23,7 @@ const htmlToElement = <T extends ChildNode>(html: string | TemplateResult) => {
   return template.content.firstChild as T;
 };
 
-const createToastContainer = () => {
+const createToastContainer = (editorHost: EditorHost) => {
   const styles = `
     position: fixed;
     z-index: 9999;
@@ -33,11 +36,15 @@ const createToastContainer = () => {
     flex-direction: column-reverse;
     align-items: center;
   `;
-  const template = html`<div class="toast-container" style="${styles}"></div>`;
+  const template = html`<div
+    class="toast-container blocksuite-overlay"
+    style="${styles}"
+  ></div>`;
   const element = htmlToElement<HTMLDivElement>(template);
-  const container = document.body.querySelector('affine-editor-container');
-  assertExists(container);
-  container.appendChild(element);
+  const rootElement = getRootByEditorHost(editorHost);
+  assertExists(rootElement);
+  const viewportElement = rootElement.viewportElement;
+  viewportElement.append(element);
   return element;
 };
 
@@ -47,9 +54,13 @@ const createToastContainer = () => {
  * toast('Hello World');
  * ```
  */
-export const toast = (message: string, duration = 2500) => {
+export const toast = (
+  editorHost: EditorHost,
+  message: string,
+  duration = 2500
+) => {
   if (!ToastContainer) {
-    ToastContainer = createToastContainer();
+    ToastContainer = createToastContainer(editorHost);
   }
 
   const styles = `
@@ -71,7 +82,7 @@ export const toast = (message: string, duration = 2500) => {
   const element = htmlToElement<HTMLDivElement>(template);
   // message is not trusted
   element.textContent = message;
-  ToastContainer.appendChild(element);
+  ToastContainer.append(element);
 
   const fadeIn = [
     {

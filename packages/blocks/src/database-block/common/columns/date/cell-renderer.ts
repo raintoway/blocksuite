@@ -1,6 +1,6 @@
 import { flip, offset } from '@floating-ui/dom';
 import { baseTheme } from '@toeverything/theme';
-import format from 'date-fns/format/index.js';
+import { format } from 'date-fns/format';
 import { css, html, unsafeCSS } from 'lit';
 import { customElement, query } from 'lit/decorators.js';
 
@@ -45,7 +45,6 @@ export class DateCell extends BaseCellRenderer<number> {
     }
     return html` <input
       type="date"
-      disabled
       value="${value}"
       class="affine-database-date date"
     />`;

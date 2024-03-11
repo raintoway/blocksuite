@@ -12,7 +12,7 @@ import {
 import { getStandardLanguage } from '../../../../code-block/utils/code-languages.js';
 import { FALLBACK_LANG } from '../../../../code-block/utils/consts.js';
 import type { ParagraphBlockModel } from '../../../../paragraph-block/index.js';
-import type { AffineInlineEditor } from '../inline/types.js';
+import type { AffineInlineEditor } from '../../../inline/presets/affine-inline-specs.js';
 import {
   convertToDivider,
   convertToList,
@@ -56,14 +56,14 @@ export function tryConvertBlock(
       return KEYBOARD_ALLOW_DEFAULT;
     }
 
-    const page = model.page;
-    page.captureSync();
+    const doc = model.doc;
+    doc.captureSync();
 
-    const parent = page.getParent(model);
+    const parent = doc.getParent(model);
     assertExists(parent);
     const index = parent.children.indexOf(model);
 
-    const codeId = page.addBlock(
+    const codeId = doc.addBlock(
       'affine:code',
       {
         language:
@@ -74,16 +74,16 @@ export function tryConvertBlock(
     );
     if (model.text && model.text.length > prefixText.length) {
       const text = model.text.clone();
-      page.addBlock('affine:paragraph', { text }, parent, index + 1);
+      doc.addBlock('affine:paragraph', { text }, parent, index + 1);
       text.delete(0, prefixText.length);
     }
-    page.deleteBlock(model, {
+    doc.deleteBlock(model, {
       bringChildrenTo: parent,
     });
 
-    const codeBlock = page.getBlockById(codeId);
+    const codeBlock = doc.getBlockById(codeId);
     assertExists(codeBlock);
-    asyncSetInlineRange(codeBlock, { index: 0, length: 0 }).catch(
+    asyncSetInlineRange(element.host, codeBlock, { index: 0, length: 0 }).catch(
       console.error
     );
 

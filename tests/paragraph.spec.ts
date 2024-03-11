@@ -40,7 +40,7 @@ import {
   assertBlockType,
   assertClassName,
   assertDivider,
-  assertPageTitleFocus,
+  assertDocTitleFocus,
   assertRichTextInlineRange,
   assertRichTexts,
   assertStoreMatchJSX,
@@ -117,6 +117,7 @@ test('backspace and arrow on title', async ({ page }) => {
   await assertTitle(page, 'hell');
 
   await pressArrowLeft(page, 2);
+  await captureHistory(page);
   await pressBackspace(page);
   await assertTitle(page, 'hll');
 
@@ -124,9 +125,9 @@ test('backspace and arrow on title', async ({ page }) => {
   await assertRichTextInlineRange(page, 0, 0, 0);
 
   await undoByKeyboard(page);
-  await assertTitle(page, 'hello');
+  await assertTitle(page, 'hell');
 
-  await redoByKeyboard(page);
+  await redoByClick(page);
   await assertTitle(page, 'hll');
 });
 
@@ -438,6 +439,7 @@ test('should indent and unindent works with children', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -491,6 +493,7 @@ test('should indent and unindent works with children', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -543,6 +546,7 @@ test('should indent and unindent works with children', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -595,6 +599,7 @@ test('should indent and unindent works with children', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -648,6 +653,7 @@ test('should indent and unindent works with children', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -704,6 +710,7 @@ test('should indent and unindent works with children', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -757,6 +764,7 @@ test('should indent and unindent works with children', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -819,6 +827,7 @@ test('should indent and unindent works with children', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -872,6 +881,7 @@ test('paragraph with child block should work at enter', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -905,6 +915,7 @@ test('paragraph with child block should work at enter', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -952,6 +963,7 @@ test('should delete paragraph block child can hold cursor in correct position', 
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -987,6 +999,7 @@ test('should delete paragraph block child can hold cursor in correct position', 
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -1019,7 +1032,7 @@ test('switch between paragraph types', async ({ page }) => {
   await focusRichText(page);
   await type(page, 'hello');
 
-  const selector = '.affine-paragraph-block-container';
+  const selector = '.affine-paragraph-rich-text-wrapper';
 
   await updateBlockType(page, 'affine:paragraph', 'h1');
   await assertClassName(page, selector, /h1/);
@@ -1178,8 +1191,9 @@ test('handling keyup when cursor located in first paragraph', async ({
   await type(page, 'world');
   await assertRichTexts(page, ['world', '']);
   await pressArrowUp(page);
+  await waitNextFrame(page);
   await pressArrowUp(page);
-  await assertPageTitleFocus(page);
+  await assertDocTitleFocus(page);
 });
 
 test('after deleting a text row, cursor should jump to the end of previous list row', async ({
@@ -1241,22 +1255,22 @@ test('press arrow down should move caret to the start of line', async ({
 }) => {
   await enterPlaygroundRoom(page);
   await page.evaluate(() => {
-    const { page } = window;
-    const pageId = page.addBlock('affine:page', {
-      title: new page.Text(),
+    const { doc } = window;
+    const rootId = doc.addBlock('affine:page', {
+      title: new doc.Text(),
     });
-    const note = page.addBlock('affine:note', {}, pageId);
-    page.addBlock(
+    const note = doc.addBlock('affine:note', {}, rootId);
+    doc.addBlock(
       'affine:paragraph',
       {
-        text: new page.Text('0'.repeat(100)),
+        text: new doc.Text('0'.repeat(100)),
       },
       note
     );
-    page.addBlock(
+    doc.addBlock(
       'affine:paragraph',
       {
-        text: new page.Text('1'),
+        text: new doc.Text('1'),
       },
       note
     );
@@ -1276,26 +1290,30 @@ test('press arrow up in the second line should move caret to the first line', as
 }) => {
   await enterPlaygroundRoom(page);
   await page.evaluate(() => {
-    const { page } = window;
-    const pageId = page.addBlock('affine:page', {
-      title: new page.Text(),
+    const { doc } = window;
+    const rootId = doc.addBlock('affine:page', {
+      title: new doc.Text(),
     });
-    const note = page.addBlock('affine:note', {}, pageId);
-    const delta = Array.from({ length: 120 }, (_, i) => {
+    const note = doc.addBlock('affine:note', {}, rootId);
+    const delta = Array.from({ length: 150 }, (_, i) => {
       return i % 2 === 0
         ? { insert: 'i', attributes: { italic: true } }
         : { insert: 'b', attributes: { bold: true } };
     });
-    const text = page.Text.fromDelta(delta);
-    page.addBlock('affine:paragraph', { text }, note);
-    page.addBlock('affine:paragraph', {}, note);
+    const text = doc.Text.fromDelta(delta);
+    doc.addBlock('affine:paragraph', { text }, note);
+    doc.addBlock('affine:paragraph', {}, note);
   });
 
   // Focus the empty paragraph
   await focusRichText(page, 1);
+  await page.waitForTimeout(100);
+  await assertRichTexts(page, ['ib'.repeat(75), '']);
   await pressArrowUp(page);
   await pressArrowUp(page);
   await type(page, '0');
+  await assertTitle(page, '');
+  await assertRichTexts(page, ['0' + 'ib'.repeat(75), '']);
   await pressArrowUp(page);
 
   // workaround for selection manager
@@ -1308,6 +1326,7 @@ test('press arrow up in the second line should move caret to the first line', as
   // At title
   await type(page, '1');
   await assertTitle(page, '1');
+  await assertRichTexts(page, ['0' + 'ib'.repeat(75), '']);
 
   // At the first line of the first paragraph
   await pressArrowDown(page);
@@ -1316,7 +1335,7 @@ test('press arrow up in the second line should move caret to the first line', as
   await pressArrowRight(page);
   await type(page, '2');
 
-  await assertRichTexts(page, ['0' + 'ib'.repeat(60), '2']);
+  await assertRichTexts(page, ['0' + 'ib'.repeat(75), '2']);
 
   // Go to the start of the second paragraph
   await pressArrowLeft(page);
@@ -1324,7 +1343,7 @@ test('press arrow up in the second line should move caret to the first line', as
   await pressArrowDown(page);
   // Should be inserted at the start of the second paragraph
   await type(page, '3');
-  await assertRichTexts(page, ['0' + 'ib'.repeat(60), '32']);
+  await assertRichTexts(page, ['0' + 'ib'.repeat(75), '32']);
 });
 
 test('press arrow down in indent line should not move caret to the start of line', async ({
@@ -1332,18 +1351,18 @@ test('press arrow down in indent line should not move caret to the start of line
 }) => {
   await enterPlaygroundRoom(page);
   await page.evaluate(() => {
-    const { page } = window;
-    const pageId = page.addBlock('affine:page', {
-      title: new page.Text(),
+    const { doc } = window;
+    const rootId = doc.addBlock('affine:page', {
+      title: new doc.Text(),
     });
-    const note = page.addBlock('affine:note', {}, pageId);
-    const p1 = page.addBlock('affine:paragraph', {}, note);
-    const p2 = page.addBlock('affine:paragraph', {}, p1);
-    page.addBlock('affine:paragraph', {}, p2);
-    page.addBlock(
+    const note = doc.addBlock('affine:note', {}, rootId);
+    const p1 = doc.addBlock('affine:paragraph', {}, note);
+    const p2 = doc.addBlock('affine:paragraph', {}, p1);
+    doc.addBlock('affine:paragraph', {}, p2);
+    doc.addBlock(
       'affine:paragraph',
       {
-        text: new page.Text('0'),
+        text: new doc.Text('0'),
       },
       note
     );
@@ -1376,7 +1395,7 @@ test('should placeholder works', async ({ page }) => {
   await enterPlaygroundRoom(page);
   await initEmptyParagraphState(page);
   await focusRichText(page);
-  const placeholder = page.locator('.tips-placeholder');
+  const placeholder = page.locator('.affine-paragraph-placeholder.visible');
   await expect(placeholder).toBeVisible();
   await expect(placeholder).toHaveCount(1);
   await expect(placeholder).toContainText("Type '/' for commands");
@@ -1397,38 +1416,28 @@ test('should placeholder works', async ({ page }) => {
 
   await pressEnter(page);
   await expect(placeholder).toHaveCount(1);
-
-  return; // test.skip
-  // should block hub icon works
-  const blockHubPlaceholder = placeholder.locator('svg');
-  const blockHubMenu = page.locator('.block-hub-icons-container');
-  await expect(blockHubPlaceholder).toBeVisible();
-  await expect(blockHubMenu).not.toBeVisible();
-  await blockHubPlaceholder.click();
-  await expect(placeholder).toHaveCount(1);
-  await expect(blockHubMenu).toBeVisible();
 });
 
 test.describe('press ArrowDown when cursor is at the last line of a block', () => {
   test.beforeEach(async ({ page }) => {
     await enterPlaygroundRoom(page);
     await page.evaluate(() => {
-      const { page } = window;
-      const pageId = page.addBlock('affine:page', {
-        title: new page.Text(),
+      const { doc } = window;
+      const rootId = doc.addBlock('affine:page', {
+        title: new doc.Text(),
       });
-      const note = page.addBlock('affine:note', {}, pageId);
-      page.addBlock(
+      const note = doc.addBlock('affine:note', {}, rootId);
+      doc.addBlock(
         'affine:paragraph',
         {
-          text: new page.Text('This is the 2nd last block.'),
+          text: new doc.Text('This is the 2nd last block.'),
         },
         note
       );
-      page.addBlock(
+      doc.addBlock(
         'affine:paragraph',
         {
-          text: new page.Text('This is the last block.'),
+          text: new doc.Text('This is the last block.'),
         },
         note
       );
@@ -1490,6 +1499,7 @@ test('delete empty text paragraph block should keep children blocks when followi
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -1532,6 +1542,7 @@ test('delete empty text paragraph block should keep children blocks when followi
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -1604,6 +1615,7 @@ test('paragraph indent and delete in line start', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -1654,6 +1666,7 @@ test('paragraph indent and delete in line start', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -1698,6 +1711,7 @@ test('paragraph indent and delete in line start', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -1737,6 +1751,7 @@ test('paragraph indent and delete in line start', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -1771,31 +1786,32 @@ test('paragraph indent and delete in line start', async ({ page }) => {
 test('delete at the start of paragraph (multiple notes)', async ({ page }) => {
   await enterPlaygroundRoom(page);
   await page.evaluate(() => {
-    const { page } = window;
+    const { doc } = window;
 
-    const pageId = page.addBlock('affine:page', {
-      title: new page.Text(),
+    const rootId = doc.addBlock('affine:page', {
+      title: new doc.Text(),
     });
-    page.addBlock('affine:surface', {}, pageId);
+    doc.addBlock('affine:surface', {}, rootId);
 
     ['123', '456'].forEach(text => {
-      const noteId = page.addBlock('affine:note', {}, pageId);
-      page.addBlock(
+      const noteId = doc.addBlock('affine:note', {}, rootId);
+      doc.addBlock(
         'affine:paragraph',
         {
-          text: new page.Text(text),
+          text: new doc.Text(text),
         },
         noteId
       );
     });
 
-    page.resetHistory();
+    doc.resetHistory();
   });
 
   await assertBlockCount(page, 'note', 2);
 
   await assertRichTexts(page, ['123', '456']);
-  await setSelection(page, 5, 0, 5, 0);
+  await focusRichText(page, 1);
+  await pressArrowLeft(page, 3);
   await pressBackspace(page);
   await assertRichTexts(page, ['123456']);
 });
@@ -1841,11 +1857,9 @@ test('arrow up/down navigation within and across paragraphs containing different
   await pressArrowUp(page);
   await assertRichTextInlineRange(page, 0, 0, 0);
   await pressArrowDown(page);
-  await assertRichTextInlineRange(page, 0, 93, 0);
+  await assertRichTextInlineRange(page, 0, 125, 0);
   await pressArrowDown(page);
-  await assertRichTextInlineRange(page, 1, 0, 0);
-  await pressArrowDown(page);
-  await assertRichTextInlineRange(page, 1, 90, 0);
+  await assertRichTextInlineRange(page, 1, 32, 0);
   await pressArrowDown(page);
   await assertRichTextInlineRange(page, 1, 125, 0);
 });

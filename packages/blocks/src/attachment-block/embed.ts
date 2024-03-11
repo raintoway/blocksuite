@@ -1,7 +1,10 @@
+import { assertExists } from '@blocksuite/global/utils';
 import { html, type TemplateResult } from 'lit';
 
+import { withTempBlobData } from '../_common/utils/filesys.js';
+import type { ImageBlockProps } from '../image-block/image-model.js';
+import { transformModel } from '../root-block/utils/operations/model.js';
 import type { AttachmentBlockModel } from './attachment-model.js';
-import { turnIntoImage } from './utils.js';
 
 type EmbedConfig = {
   name: string;
@@ -29,9 +32,9 @@ const embedConfig: EmbedConfig[] = [
   {
     name: 'image',
     check: model =>
-      model.page.schema.flavourSchemaMap.has('affine:image') &&
+      model.doc.schema.flavourSchemaMap.has('affine:image') &&
       model.type.startsWith('image/'),
-    action: model => turnIntoImage(model),
+    action: model => turnIntoImageBlock(model),
   },
   {
     name: 'pdf',
@@ -73,10 +76,10 @@ export function allowEmbed(model: AttachmentBlockModel) {
   return embedConfig.some(config => config.check(model));
 }
 
-export function turnIntoEmbedAction(model: AttachmentBlockModel) {
+export function convertToEmbed(model: AttachmentBlockModel) {
   const config = embedConfig.find(config => config.check(model));
   if (!config || !config.action) {
-    model.page.updateBlock<Partial<AttachmentBlockModel>>(model, {
+    model.doc.updateBlock<Partial<AttachmentBlockModel>>(model, {
       embed: true,
     });
     return;
@@ -91,4 +94,30 @@ export function renderEmbedView(model: AttachmentBlockModel, blobUrl: string) {
     return null;
   }
   return config.template(model, blobUrl);
+}
+
+/**
+ * Turn the attachment block into an image block.
+ */
+export function turnIntoImageBlock(model: AttachmentBlockModel) {
+  if (!model.doc.schema.flavourSchemaMap.has('affine:image'))
+    throw new Error('The image flavour is not supported!');
+
+  const sourceId = model.sourceId;
+  assertExists(sourceId);
+
+  const { saveAttachmentData, getImageData } = withTempBlobData();
+  saveAttachmentData(sourceId, { name: model.name });
+
+  const imageConvertData = model.sourceId
+    ? getImageData(model.sourceId)
+    : undefined;
+
+  const imageProp: Partial<ImageBlockProps> = {
+    sourceId,
+    caption: model.caption,
+    size: model.size,
+    ...imageConvertData,
+  };
+  transformModel(model, 'affine:image', imageProp);
 }

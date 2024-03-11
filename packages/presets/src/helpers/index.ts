@@ -1,23 +1,20 @@
-import { AffineSchemas } from '@blocksuite/blocks/models';
-import { Schema, Workspace } from '@blocksuite/store';
+import { AffineSchemas } from '@blocksuite/blocks/schemas';
+import { DocCollection, Schema } from '@blocksuite/store';
 
-export function createEmptyPage() {
+export function createEmptyDoc() {
   const schema = new Schema().register(AffineSchemas);
-  const workspace = new Workspace({ schema });
-  const page = workspace.createPage();
+  const collection = new DocCollection({ schema });
+  const doc = collection.createDoc();
 
   return {
-    page,
+    doc,
     init() {
-      page
-        .load(() => {
-          const pageBlockId = page.addBlock('affine:page', {});
-          page.addBlock('affine:surface', {}, pageBlockId);
-          const noteId = page.addBlock('affine:note', {}, pageBlockId);
-          page.addBlock('affine:paragraph', {}, noteId);
-        })
-        .catch(console.error);
-      return page;
+      doc.load();
+      const rootId = doc.addBlock('affine:page', {});
+      doc.addBlock('affine:surface', {}, rootId);
+      const noteId = doc.addBlock('affine:note', {}, rootId);
+      doc.addBlock('affine:paragraph', {}, noteId);
+      return doc;
     },
   };
 }

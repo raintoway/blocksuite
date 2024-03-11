@@ -1,7 +1,7 @@
 import './frame-card-title.js';
 
 import {
-  type EdgelessPageBlockComponent,
+  type EdgelessRootBlockComponent,
   type FrameBlockModel,
   on,
   once,
@@ -9,7 +9,7 @@ import {
 import { DisposableGroup } from '@blocksuite/global/utils';
 import type { EditorHost } from '@blocksuite/lit';
 import { ShadowlessElement, WithDisposable } from '@blocksuite/lit';
-import type { Page } from '@blocksuite/store';
+import type { Doc } from '@blocksuite/store';
 import { css, html, nothing, type PropertyValues } from 'lit';
 import { property, query } from 'lit/decorators.js';
 import { styleMap } from 'lit/directives/style-map.js';
@@ -114,13 +114,13 @@ export class FrameCard extends WithDisposable(ShadowlessElement) {
   static override styles = styles;
 
   @property({ attribute: false })
-  edgeless: EdgelessPageBlockComponent | null = null;
+  edgeless: EdgelessRootBlockComponent | null = null;
 
   @property({ attribute: false })
   frame!: FrameBlockModel;
 
   @property({ attribute: false })
-  page!: Page;
+  doc!: Doc;
 
   @property({ attribute: false })
   host!: EditorHost;
@@ -283,8 +283,8 @@ export class FrameCard extends WithDisposable(ShadowlessElement) {
           ? nothing
           : html`<frame-preview
               .edgeless=${this.edgeless}
+              .doc=${this.doc}
               .host=${this.host}
-              .page=${this.page}
               .frame=${this.frame}
             ></frame-preview>`}
         ${this._DraggingCardNumber()}

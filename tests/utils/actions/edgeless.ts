@@ -1,16 +1,14 @@
-/* eslint-disable @typescript-eslint/no-restricted-imports */
 import '../declare-test-window.js';
 
+import type { CssVariableName } from '@blocks/_common/theme/css-variables.js';
+import type { IPoint, NoteDisplayMode } from '@blocks/_common/types.js';
+import { type NoteBlockModel } from '@blocks/note-block/index.js';
+import { type IVec } from '@blocks/surface-block/index.js';
+import { assertExists, sleep } from '@global/utils/index.js';
 import type { Page } from '@playwright/test';
 import { expect } from '@playwright/test';
-import type { Bound } from 'utils/asserts.js';
 
-import {
-  type CssVariableName,
-  type IPoint,
-  type NoteBlockModel,
-} from '../../../packages/blocks/src/index.js';
-import { assertExists, sleep } from '../../../packages/global/src/utils.js';
+import { type Bound } from '../asserts.js';
 import { clickView } from './click.js';
 import { dragBetweenCoords } from './drag.js';
 import {
@@ -57,8 +55,8 @@ export enum Shape {
 export async function getNoteRect(page: Page, noteId: string) {
   const xywh: string | null = await page.evaluate(
     ([noteId]) => {
-      const page = window.workspace.getPage('page:home');
-      const block = page?.getBlockById(noteId);
+      const doc = window.collection.getDoc('doc:home');
+      const block = doc?.getBlockById(noteId);
       if (block?.flavour === 'affine:note') {
         return (block as NoteBlockModel).xywh;
       } else {
@@ -75,8 +73,8 @@ export async function getNoteRect(page: Page, noteId: string) {
 export async function getNoteProps(page: Page, noteId: string) {
   const props = await page.evaluate(
     ([id]) => {
-      const page = window.workspace.getPage('page:home');
-      const block = page?.getBlockById(id);
+      const doc = window.collection.getDoc('doc:home');
+      const block = doc?.getBlockById(id);
       if (block?.flavour === 'affine:note') {
         return (block as NoteBlockModel).keys.reduce(
           (pre, key) => {
@@ -100,8 +98,14 @@ export async function extendFormatBar(page: Page) {
   await waitNextFrame(page);
 }
 
+export async function toggleFramePanel(page: Page) {
+  await page.click('sl-button:text("Test Operations")');
+  await page.click('sl-menu-item:text("Toggle Frame Panel")');
+  await waitNextFrame(page);
+}
+
 export async function switchEditorMode(page: Page) {
-  await page.click('sl-tooltip[content="Switch Editor Mode"]');
+  await page.click('sl-tooltip[content="Switch Editor"]');
   // FIXME: listen to editor loaded event
   await waitNextFrame(page);
 }
@@ -120,7 +124,8 @@ type EdgelessTool =
   | 'eraser'
   | 'text'
   | 'connector'
-  | 'frame';
+  | 'frame'
+  | 'frameNavigator';
 type ZoomToolType = 'zoomIn' | 'zoomOut' | 'fitToScreen';
 type ComponentToolType = 'shape' | 'thin' | 'thick' | 'brush' | 'more';
 
@@ -139,6 +144,7 @@ export function locatorEdgelessToolButton(
     connector: '.edgeless-connector-button',
     note: '.edgeless-note-button',
     frame: '.edgeless-frame-button',
+    frameNavigator: '.edgeless-frame-navigator-button',
   }[type];
 
   let buttonType;
@@ -273,7 +279,7 @@ export async function setEdgelessTool(
 
 export async function assertEdgelessTool(page: Page, mode: EdgelessTool) {
   const type = await page.evaluate(() => {
-    const container = document.querySelector('affine-edgeless-page');
+    const container = document.querySelector('affine-edgeless-root');
     if (!container) {
       throw new Error('Missing edgeless page');
     }
@@ -303,10 +309,10 @@ export async function getEdgelessSelectedRect(page: Page) {
 }
 
 export async function getEdgelessSelectedRectModel(page: Page): Promise<Bound> {
-  return await page.evaluate(() => {
-    const container = document.querySelector('affine-edgeless-page');
+  return page.evaluate(() => {
+    const container = document.querySelector('affine-edgeless-root');
     if (!container) throw new Error('container not found');
-    const bound = container.selectionManager.selectedBound;
+    const bound = container.service.selection.selectedBound;
     return [bound.x, bound.y, bound.w, bound.h];
   });
 }
@@ -385,11 +391,11 @@ export async function addNote(page: Page, text: string, x: number, y: number) {
   }
 
   const { id } = await page.evaluate(() => {
-    const container = document.querySelector('affine-edgeless-page');
+    const container = document.querySelector('affine-edgeless-root');
     if (!container) throw new Error('container not found');
 
     return {
-      id: container.selectionManager.state.elements[0],
+      id: container.service.selection.selectedIds[0],
     };
   });
 
@@ -398,10 +404,10 @@ export async function addNote(page: Page, text: string, x: number, y: number) {
 
 export async function exitEditing(page: Page) {
   await page.evaluate(() => {
-    const container = document.querySelector('affine-edgeless-page');
+    const container = document.querySelector('affine-edgeless-root');
     if (!container) throw new Error('container not found');
 
-    container.selectionManager.setSelection({
+    container.service.selection.set({
       elements: [],
       editing: false,
     });
@@ -529,7 +535,7 @@ export async function getNoteBoundBoxInEdgeless(page: Page, noteId: string) {
 }
 
 export async function getAllNoteIds(page: Page) {
-  return await page.evaluate(() => {
+  return page.evaluate(() => {
     return Array.from(document.querySelectorAll('affine-note')).map(
       note => note.model.id
     );
@@ -537,7 +543,7 @@ export async function getAllNoteIds(page: Page) {
 }
 
 export async function countBlock(page: Page, flavour: string) {
-  return await page.evaluate(
+  return page.evaluate(
     ([flavour]) => {
       return Array.from(document.querySelectorAll(flavour)).length;
     },
@@ -556,6 +562,32 @@ export async function activeNoteInEdgeless(page: Page, noteId: string) {
 export async function selectNoteInEdgeless(page: Page, noteId: string) {
   const bound = await getNoteBoundBoxInEdgeless(page, noteId);
   await page.mouse.click(bound.x, bound.y);
+}
+
+export function locatorNoteDisplayModeButton(
+  page: Page,
+  mode: NoteDisplayMode
+) {
+  return page
+    .locator('edgeless-change-note-button')
+    .locator('note-display-mode-panel')
+    .locator(`.item.${mode}`);
+}
+
+export async function changeNoteDisplayMode(page: Page, mode: NoteDisplayMode) {
+  const button = locatorNoteDisplayModeButton(page, mode);
+  await button.click();
+}
+
+export async function changeNoteDisplayModeWithId(
+  page: Page,
+  noteId: string,
+  mode: NoteDisplayMode
+) {
+  await selectNoteInEdgeless(page, noteId);
+  await triggerComponentToolbarAction(page, 'changeNoteDisplayMode');
+  await waitNextFrame(page);
+  await changeNoteDisplayMode(page, mode);
 }
 
 export async function updateExistedBrushElementSize(
@@ -678,16 +710,17 @@ export async function shiftClickView(page: Page, point: [number, number]) {
 }
 
 export async function deleteAll(page: Page) {
+  await clickView(page, [0, 0]);
   await selectAllByKeyboard(page);
   await pressBackspace(page);
 }
 
 export async function deleteAllConnectors(page: Page) {
-  return await page.evaluate(() => {
-    const container = document.querySelector('affine-edgeless-page');
+  return page.evaluate(() => {
+    const container = document.querySelector('affine-edgeless-root');
     if (!container) throw new Error('container not found');
-    container.surface.getElementsByType('connector').forEach(c => {
-      container.surface.removeElement(c.id);
+    container.service.getElementsByType('connector').forEach(c => {
+      container.service.removeElement(c.id);
     });
   });
 }
@@ -722,7 +755,9 @@ type Action =
   | 'createFrameOnMoreOption'
   | 'duplicate'
   | 'renameGroup'
-  | 'autoSize';
+  | 'autoSize'
+  | 'changeNoteDisplayMode'
+  | 'changeNoteSlicerSetting';
 
 export async function triggerComponentToolbarAction(
   page: Page,
@@ -900,6 +935,20 @@ export async function triggerComponentToolbarAction(
     case 'autoSize': {
       const button = locatorComponentToolbar(page).locator(
         'edgeless-change-note-button .edgeless-auto-height-button'
+      );
+      await button.click();
+      break;
+    }
+    case 'changeNoteDisplayMode': {
+      const button = locatorComponentToolbar(page).locator(
+        'edgeless-change-note-button .display-mode-button'
+      );
+      await button.click();
+      break;
+    }
+    case 'changeNoteSlicerSetting': {
+      const button = locatorComponentToolbar(page).locator(
+        'edgeless-change-note-button .edgeless-note-slicer-button'
       );
       await button.click();
       break;
@@ -1095,10 +1144,10 @@ export async function initThreeNotes(page: Page) {
 }
 
 export async function toViewCoord(page: Page, point: number[]) {
-  return await page.evaluate(point => {
-    const container = document.querySelector('affine-edgeless-page');
+  return page.evaluate(point => {
+    const container = document.querySelector('affine-edgeless-root');
     if (!container) throw new Error('container not found');
-    return container.surface.viewport.toViewCoord(point[0], point[1]);
+    return container.service.viewport.toViewCoord(point[0], point[1]);
   }, point);
 }
 
@@ -1113,27 +1162,27 @@ export async function dragBetweenViewCoords(
 }
 
 export async function toModelCoord(page: Page, point: number[]) {
-  return await page.evaluate(point => {
-    const container = document.querySelector('affine-edgeless-page');
+  return page.evaluate(point => {
+    const container = document.querySelector('affine-edgeless-root');
     if (!container) throw new Error('container not found');
-    return container.surface.viewport.toModelCoord(point[0], point[1]);
+    return container.service.viewport.toModelCoord(point[0], point[1]);
   }, point);
 }
 
 export async function getConnectorSourceConnection(page: Page) {
-  return await page.evaluate(() => {
-    const container = document.querySelector('affine-edgeless-page');
+  return page.evaluate(() => {
+    const container = document.querySelector('affine-edgeless-root');
     if (!container) throw new Error('container not found');
-    return container.surface.getElementsByType('connector')[0].source;
+    return container.service.getElementsByType('connector')[0].source;
   });
 }
 
-export async function getConnectorPath(page: Page, index = 0) {
-  return await page.evaluate(
+export async function getConnectorPath(page: Page, index = 0): Promise<IVec[]> {
+  return page.evaluate(
     ([index]) => {
-      const container = document.querySelector('affine-edgeless-page');
+      const container = document.querySelector('affine-edgeless-root');
       if (!container) throw new Error('container not found');
-      const connectors = container.surface.getElementsByType('connector');
+      const connectors = container.service.getElementsByType('connector');
       return connectors[index].absolutePath;
     },
     [index]
@@ -1144,71 +1193,111 @@ export async function getSelectedBound(
   page: Page,
   index = 0
 ): Promise<[number, number, number, number]> {
-  return await page.evaluate(
+  return page.evaluate(
     ([index]) => {
-      const container = document.querySelector('affine-edgeless-page');
+      const container = document.querySelector('affine-edgeless-root');
       if (!container) throw new Error('container not found');
-      const selected = container.selectionManager.elements[index];
+      const selected = container.service.selection.elements[index];
       return JSON.parse(selected.xywh);
     },
     [index]
   );
 }
 
+export async function getGroupOfElements(page: Page, ids: string[]) {
+  return page.evaluate(
+    ([ids]) => {
+      const container = document.querySelector('affine-edgeless-root');
+      if (!container) throw new Error('container not found');
+
+      return ids.map(id => container.service.surface.getGroup(id)?.id ?? null);
+    },
+    [ids]
+  );
+}
+
 export async function getGroupIds(page: Page) {
-  return await page.evaluate(() => {
-    const container = document.querySelector('affine-edgeless-page');
+  return page.evaluate(() => {
+    const container = document.querySelector('affine-edgeless-root');
     if (!container) throw new Error('container not found');
-    return container.surface
-      .getElements()
-      .map(g => container.surface.getGroupParent(g).id);
+    return container.service.elements.map(el => el.group?.id ?? 'null');
   });
 }
 
-export async function getGroupChildrenIds(page: Page, index = 0) {
-  return await page.evaluate(
-    ([index]) => {
-      const container = document.querySelector('affine-edgeless-page');
+export async function getGroupChildrenIds(page: Page, id: string) {
+  return page.evaluate(
+    ([id]) => {
+      const container = document.querySelector('affine-edgeless-root');
       if (!container) throw new Error('container not found');
       return Array.from(
-        container.surface.getElementsByType('group')[index].children.keys()
+        container.service
+          .getElementsByType('group')
+          .find(group => group.id === id)?.childIds ?? []
       );
     },
-    [index]
+    [id]
   );
 }
 
 export async function getCanvasElementsCount(page: Page) {
-  return await page.evaluate(() => {
-    const container = document.querySelector('affine-edgeless-page');
+  return page.evaluate(() => {
+    const container = document.querySelector('affine-edgeless-root');
     if (!container) throw new Error('container not found');
-    return container.surface.getElements().length;
+    return container.service.elements.length;
   });
 }
 
-export async function getIds(page: Page) {
-  return await page.evaluate(() => {
-    const container = document.querySelector('affine-edgeless-page');
+export async function getSortedIds(page: Page) {
+  return page.evaluate(() => {
+    const container = document.querySelector('affine-edgeless-root');
     if (!container) throw new Error('container not found');
-    return container.surface.getElements().map(e => e.id);
+    return container.service.layer.canvasElements.map(e => e.id);
   });
+}
+
+export async function getIds(page: Page, filterGroup = false) {
+  return page.evaluate(
+    ([filterGroup]) => {
+      const container = document.querySelector('affine-edgeless-root');
+      if (!container) throw new Error('container not found');
+      return container.service.elements
+        .filter(el => !filterGroup || el.type !== 'group')
+        .map(e => e.id);
+    },
+    [filterGroup]
+  );
+}
+
+export async function getFirstGroupId(page: Page, exclude: string[] = []) {
+  return page.evaluate(
+    ([exclude]) => {
+      const container = document.querySelector('affine-edgeless-root');
+      if (!container) throw new Error('container not found');
+      return (
+        container.service.elements.find(
+          e => e.type === 'group' && !exclude.includes(e.id)
+        )?.id ?? ''
+      );
+    },
+    [exclude]
+  );
 }
 
 export async function getIndexes(page: Page) {
-  return await page.evaluate(() => {
-    const container = document.querySelector('affine-edgeless-page');
+  return page.evaluate(() => {
+    const container = document.querySelector('affine-edgeless-root');
     if (!container) throw new Error('container not found');
-    return container.surface.getElements().map(e => e.index);
+    return container.service.elements.map(e => e.index);
   });
 }
 
 export async function getSortedIdsInViewport(page: Page) {
-  return await page.evaluate(() => {
-    const container = document.querySelector('affine-edgeless-page');
+  return page.evaluate(() => {
+    const container = document.querySelector('affine-edgeless-root');
     if (!container) throw new Error('container not found');
-    const { surface } = container;
-    return surface.viewport.gridManager
-      .search(surface.viewport.viewportBounds)
+    const { service } = container;
+    return service.layer.canvasGrid
+      .search(service.viewport.viewportBounds)
       .map(e => e.id);
   });
 }
@@ -1258,5 +1347,15 @@ export async function hoverOnNote(page: Page, id: string, offset = [0, 0]) {
   await page.mouse.move(
     blockRect.x + blockRect.width / 2 + offset[0],
     blockRect.y + blockRect.height / 2 + offset[1]
+  );
+}
+
+export function toIdCountMap(ids: string[]) {
+  return ids.reduce(
+    (pre, cur) => {
+      pre[cur] = (pre[cur] ?? 0) + 1;
+      return pre;
+    },
+    {} as Record<string, number>
   );
 }

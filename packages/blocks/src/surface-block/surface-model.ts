@@ -1,17 +1,39 @@
+import { Slot } from '@blocksuite/global/utils';
 import type { MigrationRunner, Y } from '@blocksuite/store';
 import {
+  BlockModel,
   Boxed,
   defineBlockSchema,
-  type SchemaToModel,
+  DocCollection,
   Text,
-  Workspace,
 } from '@blocksuite/store';
 
+import type { ElementModel } from './element-model/base.js';
+import type {
+  Connection,
+  ConnectorElementModel,
+} from './element-model/connector.js';
+import type { GroupElementModel } from './element-model/group.js';
+import {
+  createElementModel,
+  createModelFromProps,
+  type ElementModelMap,
+  propsToY,
+} from './element-model/index.js';
+import { connectorMiddleware } from './middlewares/connector.js';
+import { groupMiddleware } from './middlewares/group.js';
 import { SurfaceBlockTransformer } from './surface-transformer.js';
+import { generateElementId } from './utils/index.js';
 
 export type SurfaceBlockProps = {
-  elements: Boxed<Y.Map<unknown>>;
+  elements: Boxed<Y.Map<Y.Map<unknown>>>;
 };
+
+export interface ElementUpdatedData {
+  id: string;
+  props: Record<string, unknown>;
+  oldValues: Record<string, unknown>;
+}
 
 const migration = {
   toV4: data => {
@@ -41,11 +63,11 @@ const migration = {
           const target = element.get('target');
           const sourceId = source['id'];
           const targetId = target['id'];
-          if (!source['position'] && (!sourceId || !value.get(sourceId))) {
+          if (!source['position'] && !sourceId) {
             value.delete(key);
             return;
           }
-          if (!target['position'] && (!targetId || !value.get(targetId))) {
+          if (!target['position'] && !targetId) {
             value.delete(key);
             return;
           }
@@ -89,14 +111,14 @@ const migration = {
   toV5: data => {
     const { elements } = data;
     if (!((elements as object | Boxed) instanceof Boxed)) {
-      const yMap = new Workspace.Y.Map();
+      const yMap = new DocCollection.Y.Map() as Y.Map<Y.Map<unknown>>;
 
       Object.entries(elements).forEach(([key, value]) => {
-        const map = new Workspace.Y.Map();
+        const map = new DocCollection.Y.Map();
         Object.entries(value).forEach(([_key, _value]) => {
           map.set(
             _key,
-            _value instanceof Workspace.Y.Text
+            _value instanceof DocCollection.Y.Text
               ? _value.clone()
               : _value instanceof Text
                 ? _value.yText.clone()
@@ -114,7 +136,7 @@ const migration = {
 export const SurfaceBlockSchema = defineBlockSchema({
   flavour: 'affine:surface',
   props: (internalPrimitives): SurfaceBlockProps => ({
-    elements: internalPrimitives.Boxed(new Workspace.Y.Map()),
+    elements: internalPrimitives.Boxed(new DocCollection.Y.Map()),
   }),
   metadata: {
     version: 5,
@@ -123,8 +145,9 @@ export const SurfaceBlockSchema = defineBlockSchema({
     children: [
       'affine:frame',
       'affine:image',
-      'affine:embed-*',
       'affine:bookmark',
+      'affine:attachment',
+      'affine:embed-*',
     ],
   },
   onUpgrade: (data, previousVersion, version) => {
@@ -136,6 +159,387 @@ export const SurfaceBlockSchema = defineBlockSchema({
     }
   },
   transformer: () => new SurfaceBlockTransformer(),
+  toModel: () => new SurfaceBlockModel(),
 });
 
-export type SurfaceBlockModel = SchemaToModel<typeof SurfaceBlockSchema>;
+export class SurfaceBlockModel extends BlockModel<SurfaceBlockProps> {
+  private _elementModels: Map<
+    string,
+    { mount: () => void; unmount: () => void; model: ElementModel }
+  > = new Map();
+  private _disposables: Array<() => void> = [];
+  private _groupToElements: Map<string, string[]> = new Map();
+  private _elementToGroup: Map<string, string> = new Map();
+  private _connectorToElements: Map<string, string[]> = new Map();
+  private _elementToConnector: Map<string, string[]> = new Map();
+
+  elementUpdated = new Slot<ElementUpdatedData>();
+  elementAdded = new Slot<{ id: string }>();
+  elementRemoved = new Slot<{
+    id: string;
+    type: string;
+    model: ElementModel;
+  }>();
+
+  get elementModels() {
+    const models: ElementModel[] = [];
+    this._elementModels.forEach(model => models.push(model.model));
+    return models;
+  }
+
+  constructor() {
+    super();
+    this.created.once(() => this._init());
+  }
+
+  private _init() {
+    this._initElementModels();
+    this._watchGroupRelationChange();
+    this._watchConnectorRelationChange();
+    this._applyMiddlewares();
+  }
+
+  private _applyMiddlewares() {
+    this._disposables.push(connectorMiddleware(this), groupMiddleware(this));
+  }
+
+  private _initElementModels() {
+    const elementsYMap = this.elements.getValue()!;
+    const onElementsMapChange = (event: Y.YMapEvent<Y.Map<unknown>>) => {
+      const { changes, keysChanged } = event;
+
+      keysChanged.forEach(id => {
+        const change = changes.keys.get(id);
+        const element = this.elements.getValue()!.get(id);
+
+        switch (change?.action) {
+          case 'add':
+            if (element) {
+              if (!this._elementModels.has(id)) {
+                const model = createElementModel(
+                  element.get('type') as string,
+                  element.get('id') as string,
+                  element,
+                  this,
+                  {
+                    onChange: payload => this.elementUpdated.emit(payload),
+                    skipFieldInit: true,
+                  }
+                );
+
+                this._elementModels.set(id, model);
+              }
+              const { mount } = this._elementModels.get(id)!;
+              mount();
+              this.elementAdded.emit({ id });
+            }
+            break;
+          case 'delete':
+            if (this._elementModels.has(id)) {
+              const { model, unmount } = this._elementModels.get(id)!;
+              unmount();
+              this.elementRemoved.emit({ id, type: model.type, model });
+              this._elementToGroup.delete(id);
+              this._elementToConnector.delete(id);
+              this._elementModels.delete(id);
+            }
+            break;
+        }
+      });
+    };
+
+    elementsYMap.forEach((val, key) => {
+      const model = createElementModel(
+        val.get('type') as string,
+        val.get('id') as string,
+        val,
+        this,
+        {
+          onChange: payload => this.elementUpdated.emit(payload),
+          skipFieldInit: true,
+        }
+      );
+
+      this._elementModels.set(key, model);
+      model.mount();
+    });
+    elementsYMap.observe(onElementsMapChange);
+
+    this._disposables.push(() => {
+      elementsYMap.unobserve(onElementsMapChange);
+    });
+  }
+
+  private _watchGroupRelationChange() {
+    const addToGroup = (elementId: string, groupId: string) => {
+      this._elementToGroup.set(elementId, groupId);
+      this._groupToElements.set(
+        groupId,
+        (this._groupToElements.get(groupId) || []).concat(elementId)
+      );
+    };
+    const removeFromGroup = (elementId: string, groupId: string) => {
+      if (this._elementToGroup.has(elementId)) {
+        const group = this._elementToGroup.get(elementId)!;
+        if (group === groupId) {
+          this._elementToGroup.delete(elementId);
+        }
+      }
+
+      if (this._groupToElements.has(groupId)) {
+        const elements = this._groupToElements.get(groupId)!;
+        const index = elements.indexOf(elementId);
+
+        if (index !== -1) {
+          elements.splice(index, 1);
+          elements.length === 0 && this._groupToElements.delete(groupId);
+        }
+      }
+    };
+
+    this.elementModels.forEach(model => {
+      if (model.type === 'group') {
+        (model as GroupElementModel).childIds.forEach(childId => {
+          addToGroup(childId, model.id);
+        });
+      }
+    });
+
+    this.elementUpdated.on(({ id, oldValues }) => {
+      const element = this.getElementById(id)!;
+
+      if (element.type === 'group' && oldValues['childIds']) {
+        (oldValues['childIds'] as string[]).forEach(childId => {
+          removeFromGroup(childId, id);
+        });
+
+        (element as GroupElementModel).childIds.forEach(childId => {
+          addToGroup(childId, id);
+        });
+
+        if ((element as GroupElementModel).childIds.length === 0) {
+          this.removeElement(id);
+        }
+      }
+    });
+
+    this.elementAdded.on(({ id }) => {
+      const element = this.getElementById(id)!;
+
+      if (element.type === 'group') {
+        (element as GroupElementModel).childIds.forEach(childId => {
+          addToGroup(childId, id);
+        });
+      }
+    });
+
+    this.elementRemoved.on(({ id, type }) => {
+      if (type === 'group') {
+        const children = [...(this._groupToElements.get(id) || [])];
+
+        children.forEach(childId => removeFromGroup(childId, id));
+      }
+    });
+  }
+
+  private _watchConnectorRelationChange() {
+    const addConnector = (targetId: string, connectorId: string) => {
+      const connectors = this._elementToConnector.get(targetId);
+
+      if (!connectors) {
+        this._elementToConnector.set(targetId, [connectorId]);
+      } else {
+        connectors.push(connectorId);
+      }
+
+      this._connectorToElements.set(
+        connectorId,
+        (this._connectorToElements.get(connectorId) || []).concat(targetId)
+      );
+    };
+    const removeConnector = (targetId: string, connectorId: string) => {
+      if (this._elementToConnector.has(targetId)) {
+        const connectors = this._elementToConnector.get(targetId)!;
+        const index = connectors.indexOf(connectorId);
+
+        if (index !== -1) {
+          connectors.splice(index, 1);
+          connectors.length === 0 && this._elementToConnector.delete(targetId);
+        }
+      }
+
+      if (this._connectorToElements.has(connectorId)) {
+        const elements = this._connectorToElements.get(connectorId)!;
+        const index = elements.indexOf(targetId);
+
+        if (index !== -1) {
+          elements.splice(index, 1);
+          elements.length === 0 &&
+            this._connectorToElements.delete(connectorId);
+        }
+      }
+    };
+
+    const updateConnectorMap = (
+      element: ElementModel,
+      type: 'add' | 'remove'
+    ) => {
+      if (element.type !== 'connector') return;
+
+      const connector = element as ConnectorElementModel;
+      const connected = [connector.source.id, connector.target.id];
+      const action = type === 'add' ? addConnector : removeConnector;
+
+      connected.forEach(id => {
+        id && action(id, connector.id);
+      });
+    };
+
+    this.elementModels.forEach(model => updateConnectorMap(model, 'add'));
+
+    this.elementUpdated.on(({ id, oldValues }) => {
+      const element = this.getElementById(id)!;
+
+      if (
+        element.type !== 'connector' ||
+        (!oldValues['source'] && !oldValues['target'])
+      )
+        return;
+
+      const oldConnected = [
+        (oldValues['source'] as Connection)?.id,
+        (oldValues['target'] as Connection)?.id,
+      ];
+
+      oldConnected.forEach(id => {
+        id && removeConnector(id, element.id);
+      });
+
+      updateConnectorMap(element, 'add');
+    });
+
+    this.elementAdded.on(id =>
+      updateConnectorMap(this.getElementById(id.id)!, 'add')
+    );
+
+    this.elementRemoved.on(({ id, type }) => {
+      if (type === 'connector') {
+        const connected = [...(this._connectorToElements.get(id) || [])];
+
+        connected.forEach(connectedId => removeConnector(connectedId, id));
+      }
+    });
+  }
+
+  override dispose(): void {
+    super.dispose();
+
+    this._disposables.forEach(dispose => dispose());
+
+    this.elementAdded.dispose();
+    this.elementRemoved.dispose();
+    this.elementUpdated.dispose();
+
+    this._elementModels.forEach(({ unmount }) => unmount());
+    this._elementModels.clear();
+  }
+
+  getConnectors(id: string) {
+    return (this._elementToConnector.get(id) || []).map(
+      id => this.getElementById(id)!
+    ) as ConnectorElementModel[];
+  }
+
+  getGroup(id: string): GroupElementModel | null {
+    return this._elementToGroup.has(id)
+      ? (this.getElementById(
+          this._elementToGroup.get(id)!
+        ) as GroupElementModel)
+      : null;
+  }
+
+  getGroups(id: string): GroupElementModel[] {
+    const groups: GroupElementModel[] = [];
+    let group = this.getGroup(id);
+
+    while (group) {
+      groups.push(group);
+      group = this.getGroup(group.id);
+    }
+
+    return groups;
+  }
+
+  getElementsByType<K extends keyof ElementModelMap>(
+    type: K
+  ): ElementModelMap[K][] {
+    return this.elementModels.filter(
+      model => model.type === type
+    ) as ElementModelMap[K][];
+  }
+
+  getElementById(id: string): ElementModel | null {
+    return this._elementModels.get(id)?.model ?? null;
+  }
+
+  addElement<T extends object = Record<string, unknown>>(
+    props: Partial<T> & { type: string }
+  ) {
+    if (this.doc.readonly) {
+      throw new Error('Cannot add element in readonly mode');
+    }
+
+    const id = generateElementId();
+
+    // @ts-ignore
+    props.id = id;
+
+    const elementModel = createModelFromProps(props, this, {
+      onChange: payload => this.elementUpdated.emit(payload),
+    });
+
+    this._elementModels.set(id, elementModel);
+
+    this.doc.transact(() => {
+      this.elements.getValue()!.set(id, elementModel.model.yMap);
+    });
+
+    return id;
+  }
+
+  removeElement(id: string) {
+    if (this.doc.readonly) {
+      throw new Error('Cannot remove element in readonly mode');
+    }
+
+    this.doc.transact(() => {
+      this.elements.getValue()!.delete(id);
+    });
+  }
+
+  updateElement<T extends object = Record<string, unknown>>(
+    id: string,
+    props: Partial<T>
+  ) {
+    if (this.doc.readonly) {
+      throw new Error('Cannot update element in readonly mode');
+    }
+
+    const elementModel = this.getElementById(id);
+
+    if (!elementModel) {
+      throw new Error(`Element ${id} is not found`);
+    }
+
+    this.doc.transact(() => {
+      props = propsToY(
+        elementModel.type,
+        props as Record<string, unknown>
+      ) as T;
+      Object.entries(props).forEach(([key, value]) => {
+        // @ts-ignore
+        elementModel[key] = value;
+      });
+    });
+  }
+}

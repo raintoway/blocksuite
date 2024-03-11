@@ -1,33 +1,28 @@
+import type { SerializedXYWH } from '@blocksuite/blocks';
 import {
   Boxed,
+  type DocCollection,
   nanoid,
   native2Y,
   Text,
-  type Workspace,
+  type Y,
 } from '@blocksuite/store';
 
-import { getOptions } from '../utils';
-import { type InitFn } from './utils';
+import { type InitFn } from './utils.js';
 
 const SHAPE_TYPES = ['rect', 'triangle', 'ellipse', 'diamond'];
+const params = new URLSearchParams(location.search);
 
-export const heavyWhiteboard: InitFn = async (
-  workspace: Workspace,
+export const heavyWhiteboard: InitFn = (
+  collection: DocCollection,
   id: string
 ) => {
-  const { count } = getOptions((params: URLSearchParams) => {
-    const count = Number(params.get('count')) || 100;
-    return {
-      count,
-    };
-  }) as {
-    count: number;
-  };
+  const count = Number(params.get('count')) || 100;
 
-  const page = workspace.createPage({ id });
-  await page.load(() => {
-    // Add page block and surface block at root level
-    const pageBlockId = page.addBlock('affine:page', {
+  const doc = collection.createDoc({ id });
+  doc.load(() => {
+    // Add root block and surface block at root level
+    const rootId = doc.addBlock('affine:page', {
       title: new Text(),
     });
 
@@ -35,11 +30,11 @@ export const heavyWhiteboard: InitFn = async (
 
     let i = 0;
 
-    // Add note block inside page block
+    // Add note block inside root block
     for (; i < count; i++) {
       const x = Math.random() * count * 2;
       const y = Math.random() * count * 2;
-      const id = nanoid('block');
+      const id = nanoid();
       surfaceBlockElements[id] = native2Y(
         {
           id,
@@ -62,25 +57,29 @@ export const heavyWhiteboard: InitFn = async (
       );
     }
 
-    page.addBlock(
+    doc.addBlock(
       'affine:surface',
-      { elements: new Boxed(native2Y(surfaceBlockElements, { deep: false })) },
-      pageBlockId
+      {
+        elements: new Boxed(
+          native2Y(surfaceBlockElements, { deep: false })
+        ) as Boxed<Y.Map<Y.Map<unknown>>>,
+      },
+      rootId
     );
 
-    // Add note block inside page block
+    // Add note block inside root block
     for (i = 0; i < count; i++) {
       const x = Math.random() * -count * 2 - 100;
       const y = Math.random() * count * 2;
-      const noteId = page.addBlock(
+      const noteId = doc.addBlock(
         'affine:note',
         {
-          xywh: `[${x}, ${y}, 100, 50]`,
+          xywh: `[${x}, ${y}, 100, 50]` as SerializedXYWH,
         },
-        pageBlockId
+        rootId
       );
       // Add paragraph block inside note block
-      page.addBlock(
+      doc.addBlock(
         'affine:paragraph',
         {
           text: new Text('Note #' + i),

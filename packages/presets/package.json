@@ -1,12 +1,13 @@
 {
   "name": "@blocksuite/presets",
-  "version": "0.10.0",
+  "version": "0.12.0",
   "description": "Prebuilt BlockSuite editors and opt-in additional UI components.",
   "type": "module",
   "repository": "toeverything/blocksuite",
   "scripts": {
-    "build": "tsc --build tsconfig.build.json --verbose",
-    "test": "vitest --run"
+    "build": "tsc --build --verbose",
+    "test": "vitest --browser.headless --run",
+    "test:debug": "vitest"
   },
   "keywords": [],
   "author": "toeverything",
@@ -18,9 +19,11 @@
     "@blocksuite/inline": "workspace:*",
     "@blocksuite/lit": "workspace:*",
     "@blocksuite/store": "workspace:*",
-    "@toeverything/theme": "^0.7.27",
-    "lit": "^3.1.0",
-    "openai": "^4.20.1"
+    "@fal-ai/serverless-client": "^0.9.0",
+    "@floating-ui/dom": "^1.6.3",
+    "@toeverything/theme": "^0.7.29",
+    "lit": "^3.1.2",
+    "openai": "^4.28.4"
   },
   "exports": {
     ".": "./src/index.ts",
@@ -39,7 +42,10 @@
     }
   },
   "files": [
+    "src",
     "dist",
-    "themes"
+    "themes",
+    "!src/__tests__",
+    "!dist/__tests__"
   ]
 }

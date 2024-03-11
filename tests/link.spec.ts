@@ -41,29 +41,34 @@ test('basic link', async ({ page }) => {
   // Create link
   await dragBetweenIndices(page, [0, 0], [0, 8]);
   await pressCreateLinkShortCut(page);
+  await page.mouse.move(0, 0);
 
-  const linkPopoverLocator = page.locator('.affine-link-popover');
-  await expect(linkPopoverLocator).toBeVisible();
+  const createLinkPopoverLocator = page.locator('.affine-link-popover.create');
+  await expect(createLinkPopoverLocator).toBeVisible();
   const linkPopoverInput = page.locator('.affine-link-popover-input');
   await expect(linkPopoverInput).toBeVisible();
   await type(page, link);
   await pressEnter(page);
-  await expect(linkPopoverLocator).not.toBeVisible();
+  await expect(createLinkPopoverLocator).not.toBeVisible();
 
   const linkLocator = page.locator('affine-link a');
   await expect(linkLocator).toHaveAttribute('href', link);
 
+  // clear text selection
+  await page.keyboard.press('ArrowLeft');
+
+  const viewLinkPopoverLocator = page.locator('.affine-link-popover.view');
   // Hover link
-  await expect(linkPopoverLocator).not.toBeVisible();
+  await expect(viewLinkPopoverLocator).not.toBeVisible();
   await linkLocator.hover();
   // wait for popover delay open
   await page.waitForTimeout(200);
-  await expect(linkPopoverLocator).toBeVisible();
+  await expect(viewLinkPopoverLocator).toBeVisible();
 
   // Edit link
   const text2 = 'link2';
   const link2 = 'https://github.com';
-  const editLinkBtn = linkPopoverLocator.getByTestId('edit');
+  const editLinkBtn = viewLinkPopoverLocator.getByTestId('edit');
   await editLinkBtn.click();
 
   const editLinkPopoverLocator = page.locator('.affine-link-edit-popover');
@@ -87,6 +92,7 @@ test('basic link', async ({ page }) => {
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -119,17 +125,17 @@ test('basic link', async ({ page }) => {
 async function createLinkBlock(page: Page, str: string, link: string) {
   const id = await page.evaluate(
     ([str, link]) => {
-      const { page } = window;
-      const pageId = page.addBlock('affine:page', {
-        title: new page.Text('title'),
+      const { doc } = window;
+      const rootId = doc.addBlock('affine:page', {
+        title: new doc.Text('title'),
       });
-      const noteId = page.addBlock('affine:note', {}, pageId);
+      const noteId = doc.addBlock('affine:note', {}, rootId);
 
-      const text = page.Text.fromDelta([
+      const text = doc.Text.fromDelta([
         { insert: 'Hello' },
         { insert: str, attributes: { link } },
       ]);
-      const id = page.addBlock(
+      const id = doc.addBlock(
         'affine:paragraph',
         { type: 'text', text: text },
         noteId
@@ -242,14 +248,15 @@ test('should keyboard work in link popover', async ({ page }) => {
   await createLinkBlock(page, linkText, 'http://example.com');
 
   await dragBetweenIndices(page, [0, 0], [0, 8]);
-  await page.mouse.move(0, 0);
   await pressCreateLinkShortCut(page);
   const linkPopoverInput = page.locator('.affine-link-popover-input');
   await assertKeyboardWorkInInput(page, linkPopoverInput);
-  await page.mouse.click(1, 1);
+  await page.mouse.click(500, 500);
 
   const linkLocator = page.locator(`text="${linkText}"`);
   const linkPopover = page.locator('.affine-link-popover');
+  await linkLocator.hover();
+  await waitNextFrame(page, 200);
   await expect(linkLocator).toBeVisible();
   // Hover link
   await linkLocator.hover();
@@ -284,15 +291,16 @@ test('link bar should not be appear when the range is collapsed', async ({
   await pressCreateLinkShortCut(page);
   await expect(linkPopoverLocator).toBeVisible();
 
+  await focusRichText(page); // click to cancel the link popover
   await focusRichTextEnd(page);
   await pressShiftEnter(page);
   await waitNextFrame(page);
   await type(page, 'bbb');
   await dragBetweenIndices(page, [0, 1], [0, 5]);
   await pressCreateLinkShortCut(page);
-  await expect(linkPopoverLocator).toBeVisible();
+  await expect(linkPopoverLocator).not.toBeVisible();
 
-  await focusRichTextEnd(page, 0);
+  await focusRichTextEnd(page);
   await pressEnter(page);
   // create auto line-break in span element
   await type(page, 'd'.repeat(67));
@@ -309,12 +317,12 @@ test('create link with paste', async ({ page }) => {
   await focusRichText(page);
   await type(page, 'aaa');
 
-  const linkPopoverLocator = page.locator('.affine-link-popover');
+  const createLinkPopoverLocator = page.locator('.affine-link-popover.create');
   const confirmBtn = page.locator('.affine-link-popover icon-button');
 
   await dragBetweenIndices(page, [0, 0], [0, 3]);
   await pressCreateLinkShortCut(page);
-  await expect(linkPopoverLocator).toBeVisible();
+  await expect(createLinkPopoverLocator).toBeVisible();
   await expect(confirmBtn).toHaveAttribute('data-test-disabled', 'true');
 
   await type(page, 'affine.pro');
@@ -324,13 +332,13 @@ test('create link with paste', async ({ page }) => {
 
   // press enter should not trigger confirm
   await pressEnter(page);
-  await expect(linkPopoverLocator).toBeVisible();
+  await expect(createLinkPopoverLocator).toBeVisible();
   await expect(confirmBtn).toHaveAttribute('data-test-disabled', 'true');
 
   await pasteByKeyboard(page, false);
   await expect(confirmBtn).toHaveAttribute('data-test-disabled', 'false');
   await pressEnter(page);
-  await expect(linkPopoverLocator).not.toBeVisible();
+  await expect(createLinkPopoverLocator).not.toBeVisible();
   await assertStoreMatchJSX(
     page,
     `
@@ -378,6 +386,7 @@ test('convert link to card', async ({ page }) => {
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -469,6 +478,7 @@ test.skip('convert link to embed', async ({ page }) => {
 <affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {

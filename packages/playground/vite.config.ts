@@ -1,6 +1,6 @@
 import path, { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { fileURLToPath } from 'url';
 import { defineConfig, loadEnv } from 'vite';
 import istanbul from 'vite-plugin-istanbul';
 import wasm from 'vite-plugin-wasm';
@@ -45,7 +45,26 @@ export default ({ mode }) => {
         input: {
           main: resolve(__dirname, 'index.html'),
           'starter/': resolve(__dirname, 'starter/index.html'),
-          'examples/basic': resolve(__dirname, 'examples/basic/index.html'),
+          'examples/basic/page': resolve(
+            __dirname,
+            'examples/basic/page/index.html'
+          ),
+          'examples/basic/edgeless': resolve(
+            __dirname,
+            'examples/basic/edgeless/index.html'
+          ),
+          'examples/multiple-editors/page-page': resolve(
+            __dirname,
+            'examples/multiple-editors/page-page/index.html'
+          ),
+          'examples/multiple-editors/page-edgeless': resolve(
+            __dirname,
+            'examples/multiple-editors/page-edgeless/index.html'
+          ),
+          'examples/multiple-editors/edgeless-edgeless': resolve(
+            __dirname,
+            'examples/multiple-editors/edgeless-edgeless/index.html'
+          ),
           'examples/inline': resolve(__dirname, 'examples/inline/index.html'),
           'examples/store': resolve(__dirname, 'examples/store/index.html'),
         },
@@ -60,16 +79,16 @@ export default ({ mode }) => {
           fileURLToPath(new URL('../blocks/src/*', import.meta.url))
         ),
         '@blocksuite/global/*': path.resolve(
-          fileURLToPath(new URL('../global/src/*', import.meta.url))
+          fileURLToPath(new URL('../framework/global/src/*', import.meta.url))
         ),
         '@blocksuite/store': path.resolve(
-          fileURLToPath(new URL('../store/src', import.meta.url))
+          fileURLToPath(new URL('../framework/store/src', import.meta.url))
         ),
         '@blocksuite/inline': path.resolve(
-          fileURLToPath(new URL('../inline/src', import.meta.url))
+          fileURLToPath(new URL('../framework/inline/src', import.meta.url))
         ),
         '@blocksuite/inline/*': path.resolve(
-          fileURLToPath(new URL('../inline/src/*', import.meta.url))
+          fileURLToPath(new URL('../framework/inline/src/*', import.meta.url))
         ),
       },
     },

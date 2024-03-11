@@ -11,6 +11,8 @@ import {
   initEmptyEdgelessState,
   initEmptyParagraphState,
   pressArrowRight,
+  pressArrowUp,
+  pressBackspace,
   pressEnter,
   selectAllByKeyboard,
   setInlineRangeInSelectedRichText,
@@ -20,14 +22,19 @@ import {
   waitForInlineEditorStateUpdated,
   waitNextFrame,
 } from './utils/actions/index.js';
-import { assertStoreMatchJSX } from './utils/asserts.js';
+import {
+  assertBlockCount,
+  assertBlockSelections,
+  assertRichTextInlineRange,
+  assertStoreMatchJSX,
+} from './utils/asserts.js';
 import { scoped, test } from './utils/playwright.js';
 
 const inputUrl = 'http://localhost';
 
 test.beforeEach(async ({ page }) => {
   await page.route(
-    'https://affine-worker.toeverything.workers.dev/api/worker/linkPreview',
+    'https://affine-worker.toeverything.workers.dev/api/worker/link-preview',
     async route => {
       await route.fulfill({
         json: {},
@@ -40,7 +47,7 @@ const createBookmarkBlockBySlashMenu = async (page: Page) => {
   await enterPlaygroundRoom(page);
   await initEmptyParagraphState(page);
   await focusRichText(page);
-  await type(page, '/bookmark');
+  await type(page, '/links');
   await pressEnter(page);
   await type(page, inputUrl);
   await pressEnter(page);
@@ -58,6 +65,7 @@ test(scoped`create bookmark by slash menu`, async ({ page }) => {
     /*xml*/ `<affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -110,6 +118,7 @@ test.skip(scoped`create bookmark by blockhub`, async ({ page }) => {
     /*xml*/ `<affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -145,12 +154,13 @@ test.skip(scoped`create bookmark by blockhub`, async ({ page }) => {
 test(scoped`covert bookmark block to link text`, async ({ page }) => {
   await createBookmarkBlockBySlashMenu(page);
   await hoverBookmarkBlock(page);
-  await page.click('.bookmark-toolbar-button.link');
+  await page.click('.embed-card-toolbar-button.link');
   await assertStoreMatchJSX(
     page,
     /*xml*/ `<affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -189,7 +199,7 @@ test(scoped`copy url to create bookmark in page mode`, async ({ page }) => {
   await setInlineRangeInSelectedRichText(page, 0, inputUrl.length);
   await copyByKeyboard(page);
   await focusRichText(page);
-  await type(page, '/bookmark');
+  await type(page, '/links');
   await pressEnter(page);
   await page.keyboard.press(`${SHORT_KEY}+v`);
   await pressEnter(page);
@@ -198,6 +208,7 @@ test(scoped`copy url to create bookmark in page mode`, async ({ page }) => {
     /*xml*/ `<affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -245,8 +256,9 @@ test(scoped`copy url to create bookmark in edgeless mode`, async ({ page }) => {
   await copyByKeyboard(page);
   await pressArrowRight(page);
   await waitNextFrame(page);
-  await type(page, '/bookmark');
+  await type(page, '/links');
   await pressEnter(page);
+  await waitNextFrame(page);
   await page.keyboard.press(`${SHORT_KEY}+v`);
   await pressEnter(page);
   await assertStoreMatchJSX(
@@ -255,6 +267,7 @@ test(scoped`copy url to create bookmark in edgeless mode`, async ({ page }) => {
   <affine:surface />
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -295,6 +308,7 @@ test(scoped`support dragging bookmark block directly`, async ({ page }) => {
     /*xml*/ `<affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -349,6 +363,7 @@ test(scoped`support dragging bookmark block directly`, async ({ page }) => {
     /*xml*/ `<affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -402,7 +417,7 @@ test(scoped`support dragging bookmark block directly`, async ({ page }) => {
   await page.mouse.up();
   await page.waitForTimeout(200);
 
-  const rects = page.locator('affine-block-selection');
+  const rects = page.locator('affine-block-selection').locator('visible=true');
   await expect(rects).toHaveCount(1);
 
   await assertStoreMatchJSX(
@@ -410,6 +425,7 @@ test(scoped`support dragging bookmark block directly`, async ({ page }) => {
     /*xml*/ `<affine:page>
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -449,4 +465,26 @@ test(scoped`support dragging bookmark block directly`, async ({ page }) => {
   </affine:note>
 </affine:page>`
   );
+});
+
+test('press backspace after bookmark block can select bookmark block', async ({
+  page,
+}) => {
+  await enterPlaygroundRoom(page);
+  await initEmptyParagraphState(page);
+  await focusRichText(page);
+
+  await pressEnter(page);
+  await pressArrowUp(page);
+  await type(page, '/links');
+  await pressEnter(page);
+  await type(page, inputUrl);
+  await pressEnter(page);
+
+  await focusRichText(page);
+  await assertBlockCount(page, 'paragraph', 1);
+  await assertRichTextInlineRange(page, 0, 0);
+  await pressBackspace(page);
+  await assertBlockSelections(page, [['0', '1', '4']]);
+  await assertBlockCount(page, 'paragraph', 0);
 });

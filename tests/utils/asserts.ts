@@ -1,49 +1,41 @@
-/* eslint-disable @typescript-eslint/no-restricted-imports */
 /* eslint-disable @typescript-eslint/no-non-null-asserted-optional-chain */
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 
 import './declare-test-window.js';
 
+import { BLOCK_ID_ATTR, NOTE_WIDTH } from '@blocks/_common/consts.js';
+import type { CssVariableName } from '@blocks/_common/theme/css-variables.js';
+import type {
+  AffineInlineEditor,
+  NoteBlockModel,
+  RichText,
+  RootBlockModel,
+} from '@blocks/index.js';
+import { assertExists } from '@global/utils/index.js';
+import type { InlineRootElement } from '@inline/inline-editor.js';
+import type { BlockElement, EditorHost } from '@lit/element/index.js';
 import type { Locator } from '@playwright/test';
 import { expect, type Page } from '@playwright/test';
+import { COLLECTION_VERSION, PAGE_VERSION } from '@store/consts.js';
+import type { BlockModel, SerializedStore } from '@store/index.js';
+import type { JSXElement } from '@store/utils/jsx.js';
 import {
   format as prettyFormat,
   plugins as prettyFormatPlugins,
 } from 'pretty-format';
 
 import {
-  BLOCK_ID_ATTR,
-  NOTE_WIDTH,
-} from '../../packages/blocks/src/_common/consts.js';
-import type { CssVariableName } from '../../packages/blocks/src/_common/theme/css-variables.js';
-import type {
-  AffineInlineEditor,
-  NoteBlockModel,
-  PageBlockModel,
-  RichText,
-} from '../../packages/blocks/src/index.js';
-import { assertExists } from '../../packages/global/src/utils.js';
-import type { InlineRootElement } from '../../packages/inline/src/index.js';
-import type { BlockElement } from '../../packages/lit/src/index.js';
-import {
-  PAGE_VERSION,
-  WORKSPACE_VERSION,
-} from '../../packages/store/src/consts.js';
-import type {
-  BaseBlockModel,
-  SerializedStore,
-} from '../../packages/store/src/index.js';
-import type { JSXElement } from '../../packages/store/src/utils/jsx.js';
-import {
   getCanvasElementsCount,
   getConnectorPath,
   getEdgelessSelectedRectModel,
   getGroupChildrenIds,
   getGroupIds,
+  getGroupOfElements,
   getNoteRect,
   getSelectedBound,
   getSortedIdsInViewport,
   getZoomLevel,
+  toIdCountMap,
 } from './actions/edgeless.js';
 import {
   pressArrowLeft,
@@ -57,7 +49,7 @@ import {
 import {
   captureHistory,
   getClipboardCustomData,
-  getCurrentEditorPageId,
+  getCurrentEditorDocId,
   getCurrentThemeCSSPropertyValue,
   getEditorLocator,
   inlineEditorInnerTextToString,
@@ -71,7 +63,7 @@ export const defaultStore: SerializedStore = {
   meta: {
     pages: [
       {
-        id: 'page:home',
+        id: 'doc:home',
         title: '',
         tags: [],
       },
@@ -84,8 +76,13 @@ export const defaultStore: SerializedStore = {
       'affine:list': 1,
       'affine:note': 1,
       'affine:divider': 1,
+      'affine:embed-youtube': 1,
+      'affine:embed-figma': 1,
       'affine:embed-github': 1,
+      'affine:embed-loom': 1,
       'affine:embed-html': 1,
+      'affine:embed-linked-doc': 1,
+      'affine:embed-synced-doc': 1,
       'affine:image': 1,
       'affine:frame': 1,
       'affine:code': 1,
@@ -94,26 +91,29 @@ export const defaultStore: SerializedStore = {
       'affine:attachment': 1,
       'affine:surface-ref': 1,
     },
-    workspaceVersion: WORKSPACE_VERSION,
+    workspaceVersion: COLLECTION_VERSION,
     pageVersion: PAGE_VERSION,
   },
   spaces: {
-    'page:home': {
+    'doc:home': {
       blocks: {
         '0': {
           'prop:title': '',
           'sys:id': '0',
           'sys:flavour': 'affine:page',
           'sys:children': ['1'],
+          'sys:version': 2,
         },
         '1': {
           'sys:flavour': 'affine:note',
           'sys:id': '1',
           'sys:children': ['2'],
+          'sys:version': 1,
           'prop:xywh': `[0,0,${NOTE_WIDTH},95]`,
           'prop:background': '--affine-background-secondary-color',
           'prop:index': 'a0',
           'prop:hidden': false,
+          'prop:displayMode': 'both',
           'prop:edgeless': {
             style: {
               borderRadius: 8,
@@ -127,6 +127,7 @@ export const defaultStore: SerializedStore = {
           'sys:flavour': 'affine:paragraph',
           'sys:id': '2',
           'sys:children': [],
+          'sys:version': 1,
           'prop:text': 'hello',
           'prop:type': 'text',
         },
@@ -143,7 +144,7 @@ export async function assertEmpty(page: Page) {
 
 export async function assertTitle(page: Page, text: string) {
   const editor = getEditorLocator(page);
-  const inlineEditor = editor.locator('[data-block-is-title="true"]').first();
+  const inlineEditor = editor.locator('.doc-title-container').first();
   const vText = inlineEditorInnerTextToString(await inlineEditor.innerText());
   expect(vText).toBe(text);
 }
@@ -167,12 +168,17 @@ export async function assertRichTextInlineDeltas(
   deltas: unknown[],
   i = 0
 ) {
-  const actual = await page.evaluate(i => {
-    const inlineRoot = document.querySelectorAll<InlineRootElement>(
-      'rich-text [data-v-root="true"]'
-    )[i];
-    return inlineRoot.inlineEditor.yTextDeltas;
-  }, i);
+  const actual = await page.evaluate(
+    ([i, currentEditorIndex]) => {
+      const editorHost =
+        document.querySelectorAll('editor-host')[currentEditorIndex];
+      const inlineRoot = editorHost.querySelectorAll<InlineRootElement>(
+        'rich-text [data-v-root="true"]'
+      )[i];
+      return inlineRoot.inlineEditor.yTextDeltas;
+    },
+    [i, currentEditorIndex]
+  );
   expect(actual).toEqual(deltas);
 }
 
@@ -187,10 +193,11 @@ export async function assertTextContain(page: Page, text: string, i = 0) {
 }
 
 export async function assertRichTexts(page: Page, texts: string[]) {
-  const actualTexts = await page.evaluate(index => {
-    const editor = document.querySelectorAll('affine-editor-container')[index];
+  const actualTexts = await page.evaluate(currentEditorIndex => {
+    const editorHost =
+      document.querySelectorAll('editor-host')[currentEditorIndex];
     const richTexts = Array.from(
-      editor?.querySelectorAll<RichText>('rich-text') ?? []
+      editorHost?.querySelectorAll<RichText>('rich-text') ?? []
     );
     return richTexts.map(richText => {
       const editor = richText.inlineEditor as AffineInlineEditor;
@@ -249,8 +256,8 @@ export async function assertImageOption(page: Page) {
   await expect(locator).toBeVisible();
 }
 
-export async function assertPageTitleFocus(page: Page) {
-  const locator = page.locator('.affine-doc-page-block-title').nth(0);
+export async function assertDocTitleFocus(page: Page) {
+  const locator = page.locator('doc-title .inline-editor').nth(0);
   await expect(locator).toBeFocused();
 }
 
@@ -293,11 +300,10 @@ export async function assertRichTextInlineRange(
   rangeLength = 0
 ) {
   const actual = await page.evaluate(
-    ([richTextIndex, index]) => {
-      const editor = document.querySelectorAll('affine-editor-container')[
-        index
-      ];
-      const richText = editor?.querySelectorAll('rich-text')[richTextIndex];
+    ([richTextIndex, currentEditorIndex]) => {
+      const editorHost =
+        document.querySelectorAll('editor-host')[currentEditorIndex];
+      const richText = editorHost?.querySelectorAll('rich-text')[richTextIndex];
       const inlineEditor = richText.inlineEditor;
       return inlineEditor?.getInlineRange();
     },
@@ -322,8 +328,8 @@ export async function assertNoteXYWH(
   expected: [number, number, number, number]
 ) {
   const actual = await page.evaluate(() => {
-    const root = window.page.root as PageBlockModel;
-    const note = root.children.find(
+    const rootModel = window.doc.root as RootBlockModel;
+    const note = rootModel.children.find(
       x => x.flavour === 'affine:note'
     ) as NoteBlockModel;
     return JSON.parse(note.xywh) as number[];
@@ -341,8 +347,10 @@ export async function assertTextFormat(
   resultObj: unknown
 ) {
   const actual = await page.evaluate(
-    ({ richTextIndex, index }) => {
-      const richText = document.querySelectorAll('rich-text')[richTextIndex];
+    ({ richTextIndex, index, currentEditorIndex }) => {
+      const editorHost =
+        document.querySelectorAll('editor-host')[currentEditorIndex];
+      const richText = editorHost.querySelectorAll('rich-text')[richTextIndex];
       const inlineEditor = richText.inlineEditor;
       if (!inlineEditor) {
         throw new Error('Inline editor is undefined');
@@ -354,7 +362,7 @@ export async function assertTextFormat(
       });
       return result;
     },
-    { richTextIndex, index }
+    { richTextIndex, index, currentEditorIndex }
   );
   expect(actual).toEqual(resultObj);
 }
@@ -365,24 +373,26 @@ export async function assertRichTextModelType(
   index = 0
 ) {
   const actual = await page.evaluate(
-    ({ index, BLOCK_ID_ATTR }) => {
-      const richText = document.querySelectorAll('rich-text')[index];
+    ({ index, BLOCK_ID_ATTR, currentEditorIndex }) => {
+      const editorHost =
+        document.querySelectorAll('editor-host')[currentEditorIndex];
+      const richText = editorHost.querySelectorAll('rich-text')[index];
       const blockElement = richText.closest<BlockElement>(`[${BLOCK_ID_ATTR}]`);
 
       if (!blockElement) {
         throw new Error('blockElement is undefined');
       }
-      return (blockElement.model as BaseBlockModel<{ type: string }>).type;
+      return (blockElement.model as BlockModel<{ type: string }>).type;
     },
-    { index, BLOCK_ID_ATTR }
+    { index, BLOCK_ID_ATTR, currentEditorIndex }
   );
   expect(actual).toEqual(type);
 }
 
 export async function assertTextFormats(page: Page, resultObj: unknown[]) {
   const actual = await page.evaluate(index => {
-    const editor = document.querySelectorAll('affine-editor-container')[index];
-    const elements = editor?.querySelectorAll('rich-text');
+    const editorHost = document.querySelectorAll('editor-host')[index];
+    const elements = editorHost.querySelectorAll('rich-text');
     return Array.from(elements).map(el => {
       const inlineEditor = el.inlineEditor;
       if (!inlineEditor) {
@@ -401,7 +411,7 @@ export async function assertTextFormats(page: Page, resultObj: unknown[]) {
 
 export async function assertStore(page: Page, expected: SerializedStore) {
   const actual = (await page.evaluate(() => {
-    const json = window.workspace.doc.toJSON();
+    const json = window.collection.doc.toJSON();
     delete json.meta.pages[0].createDate;
     return json;
   })) as SerializedStore;
@@ -417,7 +427,7 @@ export async function assertBlockChildrenIds(
     ({ blockId }) => {
       const element = document.querySelector(`[data-block-id="${blockId}"]`);
       // @ts-ignore
-      const model = element.model as BaseBlockModel;
+      const model = element.model as BlockModel;
       return model.children.map(child => child.id);
     },
     { blockId }
@@ -434,7 +444,7 @@ export async function assertBlockChildrenFlavours(
     ({ blockId }) => {
       const element = document.querySelector(`[data-block-id="${blockId}"]`);
       // @ts-ignore
-      const model = element.model as BaseBlockModel;
+      const model = element.model as BlockModel;
       return model.children.map(child => child.flavour);
     },
     { blockId }
@@ -469,7 +479,7 @@ export async function assertBlockType(
     ({ id }) => {
       const element = document.querySelector(`[data-block-id="${id}"]`);
       // @ts-ignore
-      const model = element.model as BaseBlockModel;
+      const model = element.model as BlockModel;
       // @ts-ignore
       return model.type;
     },
@@ -487,7 +497,7 @@ export async function assertBlockProps(
     ([id, props]) => {
       const element = document.querySelector(`[data-block-id="${id}"]`);
       // @ts-ignore
-      const model = element.model as BaseBlockModel;
+      const model = element.model as BlockModel;
       return Object.fromEntries(
         // @ts-ignore
         Object.keys(props).map(key => [key, (model[key] as unknown).toString()])
@@ -526,9 +536,9 @@ export async function assertBlockTypes(page: Page, blockTypes: string[]) {
  */
 export async function assertMatchMarkdown(page: Page, text: string) {
   const jsonDoc = (await page.evaluate(() =>
-    window.workspace.doc.toJSON()
+    window.collection.doc.toJSON()
   )) as SerializedStore;
-  const titleNode = jsonDoc['page:home']['0'] as Record<string, unknown>;
+  const titleNode = jsonDoc['doc:home']['0'] as Record<string, unknown>;
 
   const markdownVisitor = (node: Record<string, unknown>): string => {
     // TODO use schema
@@ -558,7 +568,7 @@ export async function assertMatchMarkdown(page: Page, text: string) {
       // return visitor(node);
     }
 
-    const children = node['sys:children'].map(id => jsonDoc['page:home'][id]);
+    const children = node['sys:children'].map(id => jsonDoc['doc:home'][id]);
     return [
       visitor(node),
       ...children.flatMap(child =>
@@ -584,10 +594,10 @@ export async function assertStoreMatchJSX(
   snapshot: string,
   blockId?: string
 ) {
-  const pageId = await getCurrentEditorPageId(page);
+  const docId = await getCurrentEditorDocId(page);
   const element = (await page.evaluate(
-    ([blockId, pageId]) => window.workspace.exportJSX(blockId, pageId),
-    [blockId, pageId]
+    ([blockId, docId]) => window.collection.exportJSX(blockId, docId),
+    [blockId, docId]
   )) as JSXElement;
 
   // Fix symbol can not be serialized, we need to set $$typeof manually
@@ -624,11 +634,7 @@ export async function assertStoreMatchJSX(
 
 type MimeType = 'text/plain' | 'blocksuite/x-c+w' | 'text/html';
 
-export async function assertClipItems(
-  _page: Page,
-  _key: MimeType,
-  _value: unknown
-) {
+export function assertClipItems(_page: Page, _key: MimeType, _value: unknown) {
   // FIXME: use original clipboard API
   // const clipItems = await page.evaluate(() => {
   //   return document
@@ -779,6 +785,21 @@ export function assertDOMRectEqual(a: DOMRect, b: DOMRect) {
   expect(a.height).toBeCloseTo(b.height, 0);
 }
 
+export async function assertEdgelessDraggingArea(page: Page, xywh: number[]) {
+  const [x, y, w, h] = xywh;
+  const editor = getEditorLocator(page);
+  const draggingArea = editor
+    .locator('edgeless-dragging-area-rect')
+    .locator('.affine-edgeless-dragging-area');
+
+  const box = await draggingArea.boundingBox();
+  if (!box) throw new Error('Missing edgeless dragging area');
+
+  expect(box.x).toBeCloseTo(x, 0);
+  expect(box.y).toBeCloseTo(y, 0);
+  expect(box.width).toBeCloseTo(w, 0);
+  expect(box.height).toBeCloseTo(h, 0);
+}
 export async function assertEdgelessSelectedRect(page: Page, xywh: number[]) {
   const [x, y, w, h] = xywh;
   const editor = getEditorLocator(page);
@@ -901,7 +922,7 @@ export async function assertConnectorPath(
   index = 0
 ) {
   const actualPath = await getConnectorPath(page, index);
-  actualPath.every((p, i) => assertPointAlmostEqual(p, path[i]));
+  actualPath.every((p, i) => assertPointAlmostEqual(p, path[i], 0.1));
 }
 
 export function assertRectExist(
@@ -919,9 +940,19 @@ export async function assertSelectedBound(
   assertBound(bound, expected);
 }
 
-export async function assertGroupIds(page: Page, expected: string[]) {
+/**
+ * asserts all groups and they children count at the same time
+ * @param page
+ * @param expected the expected group id and the count of of its children
+ */
+export async function assertGroupIds(
+  page: Page,
+  expected: Record<string, number>
+) {
   const ids = await getGroupIds(page);
-  expect(ids).toEqual(expected);
+  const result = toIdCountMap(ids);
+
+  expect(result).toEqual(expected);
 }
 
 export async function assertSortedIds(page: Page, expected: string[]) {
@@ -931,11 +962,43 @@ export async function assertSortedIds(page: Page, expected: string[]) {
 
 export async function assertGroupChildrenIds(
   page: Page,
-  expected: string[],
-  index = 0
+  expected: Record<string, number>,
+  id: string
 ) {
-  const ids = await getGroupChildrenIds(page, index);
-  expect(ids).toEqual(expected);
+  const ids = await getGroupChildrenIds(page, id);
+  const result = toIdCountMap(ids);
+
+  expect(result).toEqual(expected);
+}
+
+export async function assertGroupOfElements(
+  page: Page,
+  elements: string[],
+  groupId: string
+) {
+  const elementGroups = await getGroupOfElements(page, elements);
+
+  elementGroups.forEach(elementGroup => {
+    expect(elementGroup).toEqual(groupId);
+  });
+}
+
+/**
+ * Assert the given group has the expected children count.
+ * And the children's group id should equal to the given group id.
+ * @param page
+ * @param groupId
+ * @param childrenCount
+ */
+export async function assertGroupChildren(
+  page: Page,
+  groupId: string,
+  childrenCount: number
+) {
+  const ids = await getGroupChildrenIds(page, groupId);
+
+  await assertGroupOfElements(page, ids, groupId);
+  expect(new Set(ids).size).toBe(childrenCount);
 }
 
 export async function assertCanvasElementsCount(page: Page, expected: number) {
@@ -1003,4 +1066,16 @@ export async function assertNotHasClass(locator: Locator, className: string) {
 export async function assertNoteSequence(page: Page, expected: string) {
   const actual = await page.locator('.edgeless-index-label').innerText();
   expect(expected).toBe(actual);
+}
+
+export async function assertBlockSelections(page: Page, paths: string[][]) {
+  const selections = await page.evaluate(() => {
+    const host = document.querySelector<EditorHost>('editor-host');
+    if (!host) {
+      throw new Error('editor-host host not found');
+    }
+    return host.selection.filter('block');
+  });
+  const actualPaths = selections.map(selection => selection.path);
+  expect(actualPaths).toEqual(paths);
 }

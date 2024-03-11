@@ -115,3 +115,10 @@ Example:
 - Gaurav Ruhela, @gauravruhela07, 2023/12/07
 - Han @nawbc, 2023/12/14
 - Antriksh Dangi, @antriksh-9, 2023/12/18
+- Umar Faiz, @umar23faiz, 2023/12/29
+- Adithyan, @golok727, 2024/02/10
+- zkwolf, @zkwolf, 2024/2/19
+- Yuntian Sun, @ununian, 2024/02/20
+- wumo, @wumo1016, 2024/2/27
+- Yuan Congzhou, @congzhou09, 2024/03/01
+- RhonJoe, @JunIce, 2024/03/04

@@ -1,16 +1,16 @@
 /* eslint-disable no-undef */
 // ALL_PACKAGES
 const allPackages = [
-  'block-std',
+  'framework/block-std',
+  'framework/global',
+  'frameworlk/inline',
+  'framework/lit',
+  'framework/store',
+  'framework/sync',
   'blocks',
   'docs',
-  'global',
-  'inline',
-  'lit',
   'playground',
   'presets',
-  'store',
-  'virgo',
 ];
 
 const createPattern = packageName => [
@@ -63,6 +63,7 @@ module.exports = {
     '**/*.cjs',
     'tests/snapshots/*',
     '__snapshots__/*',
+    'examples/**',
   ],
   overrides: [
     {
@@ -84,13 +85,33 @@ module.exports = {
             ignoreRestSiblings: true,
           },
         ],
-        '@typescript-eslint/no-floating-promises': 'error',
         '@typescript-eslint/no-non-null-asserted-nullish-coalescing': 'error',
+        'no-return-await': 'off',
+        '@typescript-eslint/return-await': 'error',
+        'require-await': 'off',
+        '@typescript-eslint/require-await': 'error',
+        '@typescript-eslint/await-thenable': 'error',
+        '@typescript-eslint/no-floating-promises': 'error',
         '@typescript-eslint/no-misused-promises': 'error',
         '@typescript-eslint/no-namespace': [
           'error',
           { allowDeclarations: true },
         ],
+        'no-constant-binary-expression': 'error',
+        'unicorn/no-useless-spread': 'error',
+        'unicorn/no-useless-fallback-in-spread': 'error',
+        'unicorn/prefer-dom-node-dataset': 'error',
+        'unicorn/prefer-dom-node-append': 'error',
+        'unicorn/prefer-dom-node-remove': 'error',
+        'unicorn/prefer-array-some': 'error',
+        'unicorn/prefer-date-now': 'error',
+        'unicorn/prefer-blob-reading-methods': 'error',
+        'unicorn/no-typeof-undefined': 'error',
+        'unicorn/no-useless-promise-resolve-reject': 'error',
+        'unicorn/no-new-array': 'error',
+        'unicorn/new-for-builtins': 'error',
+        'unicorn/prefer-node-protocol': 'error',
+        'unicorn/no-useless-length-check': 'error',
       },
     },
     ...allPackages.map(pkg => ({
@@ -112,7 +133,7 @@ module.exports = {
     ecmaVersion: 'latest',
     sourceType: 'module',
   },
-  plugins: ['@typescript-eslint', 'simple-import-sort', 'prettier'],
+  plugins: ['@typescript-eslint', 'simple-import-sort', 'prettier', 'unicorn'],
   rules: {
     '@typescript-eslint/consistent-type-imports': [
       'error',

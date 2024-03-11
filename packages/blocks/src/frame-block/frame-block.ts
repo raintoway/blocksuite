@@ -5,7 +5,7 @@ import { customElement, state } from 'lit/decorators.js';
 import { styleMap } from 'lit/directives/style-map.js';
 
 import { isCssVariable } from '../_common/theme/css-variables.js';
-import type { EdgeelssFrameTitle } from '../page-block/edgeless/components/block-portal/frame/edgeless-frame.js';
+import type { EdgelessFrameTitle } from '../root-block/edgeless/components/block-portal/frame/edgeless-frame.js';
 import { Bound } from '../surface-block/index.js';
 import type { FrameBlockModel } from './frame-model.js';
 
@@ -14,39 +14,38 @@ export class FrameBlockComponent extends BlockElement<FrameBlockModel> {
   @state()
   private _isNavigator = false;
 
-  get titleElement(): EdgeelssFrameTitle | null {
+  get titleElement(): EdgelessFrameTitle | null {
     return (
-      this.closest('affine-edgeless-page')?.querySelector?.(
+      this.closest('affine-edgeless-root')?.querySelector?.(
         `[data-frame-title-id="${this.model.id}"]`
       ) ?? null
     );
   }
 
-  get isInner() {
-    const title = this.titleElement;
-    if (!title) return false;
-    return title.isInner;
+  private get _surface() {
+    return this.closest('affine-edgeless-root')!.surface;
   }
 
-  get surface() {
-    return this.closest('affine-edgeless-page')!.surface;
+  private get _edgeless() {
+    return this.closest('affine-edgeless-root');
   }
 
   override connectedCallback() {
     super.connectedCallback();
+
     let lastZoom = 0;
     this._disposables.add(
-      this.surface.viewport.slots.viewportUpdated.on(({ zoom }) => {
+      this._edgeless!.service.viewport.viewportUpdated.on(({ zoom }) => {
         if (zoom !== lastZoom) {
-          this.requestUpdate();
           lastZoom = zoom;
+          this.requestUpdate();
         }
       })
     );
 
     this._disposables.add(
-      this.surface.edgeless.slots.elementUpdated.on(({ id }) => {
-        if (id === this.model.id) {
+      this.doc.slots.blockUpdated.on(({ type, id }) => {
+        if (id === this.model.id && type === 'update') {
           this.requestUpdate();
         }
       })
@@ -58,12 +57,12 @@ export class FrameBlockComponent extends BlockElement<FrameBlockModel> {
   }
 
   override firstUpdated() {
-    this.surface.edgeless.slots.edgelessToolUpdated.on(tool => {
+    this._surface.edgeless.slots.edgelessToolUpdated.on(tool => {
       this._isNavigator = tool.type === 'frameNavigator' ? true : false;
     });
   }
 
-  override render() {
+  override renderBlock() {
     const { model, _isNavigator } = this;
     const bound = Bound.deserialize(model.xywh);
 

@@ -1,7 +1,8 @@
 import type { Page } from '@playwright/test';
 import { expect } from '@playwright/test';
-import { addNewPage, switchToPage } from 'utils/actions/click.js';
-import { dragBetweenIndices } from 'utils/actions/drag.js';
+
+import { addNewPage, switchToPage } from './utils/actions/click.js';
+import { dragBetweenIndices } from './utils/actions/drag.js';
 import {
   copyByKeyboard,
   pasteByKeyboard,
@@ -12,7 +13,7 @@ import {
   selectAllByKeyboard,
   type,
   undoByKeyboard,
-} from 'utils/actions/keyboard.js';
+} from './utils/actions/keyboard.js';
 import {
   captureHistory,
   enterPlaygroundRoom,
@@ -20,19 +21,18 @@ import {
   focusTitle,
   initEmptyParagraphState,
   waitNextFrame,
-} from 'utils/actions/misc.js';
+} from './utils/actions/misc.js';
 import {
   assertRichTexts,
   assertStoreMatchJSX,
   assertTitle,
-} from 'utils/asserts.js';
-
+} from './utils/asserts.js';
 import { test } from './utils/playwright.js';
 
 function getLinkedPagePopover(page: Page) {
   const REFERENCE_NODE = ' ' as const;
   const refNode = page.locator('affine-reference');
-  const linkedPagePopover = page.locator('.linked-page-popover');
+  const linkedPagePopover = page.locator('.linked-doc-popover');
   const pageBtn = linkedPagePopover.locator('.group > icon-button');
 
   const findRefNode = async (title: string) => {
@@ -112,6 +112,7 @@ test.describe('multiple page', () => {
 >
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -150,6 +151,7 @@ test.describe('multiple page', () => {
   <affine:surface />
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -484,7 +486,7 @@ test.describe('reference node', () => {
   test('should create reference node works', async ({ page }) => {
     await enterPlaygroundRoom(page);
     await initEmptyParagraphState(page);
-    const defaultPageId = 'page:home';
+    const defaultPageId = 'doc:home';
     const { id: newId } = await addNewPage(page);
     await switchToPage(page, newId);
     await focusTitle(page);
@@ -535,6 +537,7 @@ test.describe('reference node', () => {
   <affine:surface />
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -568,6 +571,7 @@ test.describe('reference node', () => {
 >
   <affine:note
     prop:background="--affine-background-secondary-color"
+    prop:displayMode="both"
     prop:edgeless={
       Object {
         "style": Object {
@@ -694,14 +698,14 @@ test.describe('linked page popover', () => {
     await expect(pageBtn).toHaveText([
       'page1',
       'page2',
-      'Create "Untitled" page',
+      'Create "Untitled" doc',
       'Import',
     ]);
     // page2
     //  ^  ^
     await type(page, 'a2');
     await expect(pageBtn).toHaveCount(3);
-    await expect(pageBtn).toHaveText(['page2', 'Create "a2" page', 'Import']);
+    await expect(pageBtn).toHaveText(['page2', 'Create "a2" doc', 'Import']);
     await pressEnter(page);
     await expect(linkedPagePopover).toBeHidden();
     await assertExistRefText('page2');
@@ -790,6 +794,7 @@ test.describe.skip('linked page with clipboard', () => {
       `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {

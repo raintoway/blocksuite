@@ -2,7 +2,7 @@ import { css, html, LitElement } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { styleMap } from 'lit/directives/style-map.js';
 
-import type { DropResult, Rect } from '../../_common/utils/index.js';
+import type { Rect } from '../../_common/utils/index.js';
 
 @customElement('affine-drag-indicator')
 export class DragIndicator extends LitElement {
@@ -23,15 +23,7 @@ export class DragIndicator extends LitElement {
   `;
 
   @property({ attribute: false })
-  dropResult: DropResult | null = null;
-
-  @property({ attribute: false })
   rect: Rect | null = null;
-
-  reset() {
-    this.dropResult = null;
-    this.rect = null;
-  }
 
   override render() {
     if (!this.rect) {
@@ -43,7 +35,10 @@ export class DragIndicator extends LitElement {
       height: `${height}px`,
       transform: `translate(${left}px, ${top}px)`,
     });
-    return html`<div class="affine-drag-indicator" style=${style}></div>`;
+    return html`<div
+      class="affine-drag-indicator blocksuite-overlay"
+      style=${style}
+    ></div>`;
   }
 }
 

@@ -1,5 +1,5 @@
 import type { MigrationRunner, Text } from '@blocksuite/store';
-import { BaseBlockModel, defineBlockSchema, nanoid } from '@blocksuite/store';
+import { BlockModel, defineBlockSchema, nanoid } from '@blocksuite/store';
 
 import { getTagColor } from '../_common/components/tags/colors.js';
 import { multiSelectPureColumnConfig } from './common/columns/multi-select/define.js';
@@ -26,7 +26,7 @@ export type SerializedCells = {
   };
 };
 
-export class DatabaseBlockModel extends BaseBlockModel<DatabaseBlockProps> {
+export class DatabaseBlockModel extends BlockModel<DatabaseBlockProps> {
   getViewList() {
     return this.views;
   }
@@ -48,7 +48,7 @@ export class DatabaseBlockModel extends BaseBlockModel<DatabaseBlockProps> {
   }
 
   initTemplate(viewType: DataViewTypes) {
-    const ids = [nanoid('unknown'), nanoid('unknown'), nanoid('unknown')];
+    const ids = [nanoid(), nanoid(), nanoid()];
     const statusId = this.addColumn(
       'end',
       selectPureColumnConfig.create('Status', {
@@ -72,10 +72,10 @@ export class DatabaseBlockModel extends BaseBlockModel<DatabaseBlockProps> {
       })
     );
     for (let i = 0; i < 4; i++) {
-      const rowId = this.page.addBlock(
+      const rowId = this.doc.addBlock(
         'affine:paragraph',
         {
-          text: new this.page.Text(`Task ${i + 1}`),
+          text: new this.doc.Text(`Task ${i + 1}`),
         },
         this.id
       );
@@ -88,17 +88,17 @@ export class DatabaseBlockModel extends BaseBlockModel<DatabaseBlockProps> {
   }
 
   addView(type: DataViewTypes) {
-    const id = this.page.generateBlockId();
+    const id = this.doc.generateBlockId();
     const viewConfig = viewManager.getView(type);
     const view = viewConfig.init(this, id, viewConfig.defaultName);
-    this.page.transact(() => {
+    this.doc.transact(() => {
       this.views.push(view);
     });
     return view;
   }
   duplicateView(id: string): string {
-    const newId = this.page.generateBlockId();
-    this.page.transact(() => {
+    const newId = this.doc.generateBlockId();
+    this.doc.transact(() => {
       const index = this.views.findIndex(v => v.id === id);
       const view = this.views[index];
       if (view) {
@@ -113,8 +113,8 @@ export class DatabaseBlockModel extends BaseBlockModel<DatabaseBlockProps> {
   }
 
   deleteView(id: string) {
-    this.page.captureSync();
-    this.page.transact(() => {
+    this.doc.captureSync();
+    this.doc.transact(() => {
       this.views = this.views.filter(v => v.id !== id);
     });
   }
@@ -123,7 +123,7 @@ export class DatabaseBlockModel extends BaseBlockModel<DatabaseBlockProps> {
     id: string,
     update: (data: DataViewDataType) => Partial<DataViewDataType>
   ) {
-    this.page.transact(() => {
+    this.doc.transact(() => {
       this.views = this.views.map(v => {
         if (v.id !== id) {
           return v;
@@ -134,7 +134,7 @@ export class DatabaseBlockModel extends BaseBlockModel<DatabaseBlockProps> {
     this.applyViewsUpdate();
   }
   moveViewTo(id: string, position: InsertToPosition) {
-    this.page.transact(() => {
+    this.doc.transact(() => {
       this.views = arrayMove(
         this.views,
         v => v.id === id,
@@ -145,13 +145,13 @@ export class DatabaseBlockModel extends BaseBlockModel<DatabaseBlockProps> {
   }
 
   applyViewsUpdate() {
-    this.page.updateBlock(this, {
+    this.doc.updateBlock(this, {
       views: this.views,
     });
   }
 
   applyColumnUpdate() {
-    this.page.updateBlock(this, {
+    this.doc.updateBlock(this, {
       columns: this.columns,
     });
   }
@@ -170,11 +170,11 @@ export class DatabaseBlockModel extends BaseBlockModel<DatabaseBlockProps> {
       id?: string;
     }
   ): string {
-    const id = column.id ?? this.page.generateBlockId();
-    if (this.columns.find(v => v.id === id)) {
+    const id = column.id ?? this.doc.generateBlockId();
+    if (this.columns.some(v => v.id === id)) {
       return id;
     }
-    this.page.transact(() => {
+    this.doc.transact(() => {
       const col = {
         ...column,
         id,
@@ -193,7 +193,7 @@ export class DatabaseBlockModel extends BaseBlockModel<DatabaseBlockProps> {
     if (index == null) {
       return;
     }
-    this.page.transact(() => {
+    this.doc.transact(() => {
       const column = this.columns[index];
       this.columns[index] = { ...column, ...updater(column) };
     });
@@ -204,12 +204,12 @@ export class DatabaseBlockModel extends BaseBlockModel<DatabaseBlockProps> {
     const index = this.findColumnIndex(columnId);
     if (index < 0) return;
 
-    this.page.transact(() => {
+    this.doc.transact(() => {
       this.columns.splice(index, 1);
     });
   }
 
-  getCell(rowId: BaseBlockModel['id'], columnId: Column['id']): Cell | null {
+  getCell(rowId: BlockModel['id'], columnId: Column['id']): Cell | null {
     if (columnId === 'title') {
       return {
         columnId: 'title',
@@ -231,7 +231,7 @@ export class DatabaseBlockModel extends BaseBlockModel<DatabaseBlockProps> {
     if (!hasRow) {
       this.cells[rowId] = Object.create(null);
     }
-    this.page.transact(() => {
+    this.doc.transact(() => {
       this.cells[rowId][cell.columnId] = {
         columnId: cell.columnId,
         value: cell.value,
@@ -240,7 +240,7 @@ export class DatabaseBlockModel extends BaseBlockModel<DatabaseBlockProps> {
   }
 
   copyCellsByColumn(fromId: Column['id'], toId: Column['id']) {
-    this.page.transact(() => {
+    this.doc.transact(() => {
       Object.keys(this.cells).forEach(rowId => {
         const cell = this.cells[rowId][fromId];
         if (cell) {
@@ -254,7 +254,7 @@ export class DatabaseBlockModel extends BaseBlockModel<DatabaseBlockProps> {
   }
 
   updateCells(columnId: string, cells: Record<string, unknown>) {
-    this.page.transact(() => {
+    this.doc.transact(() => {
       Object.entries(cells).forEach(([rowId, value]) => {
         this.cells[rowId][columnId] = {
           columnId,
@@ -267,7 +267,7 @@ export class DatabaseBlockModel extends BaseBlockModel<DatabaseBlockProps> {
 
 const migration = {
   toV3: data => {
-    const id = nanoid('unknown');
+    const id = nanoid();
     // @ts-expect-error
     const title = data['titleColumnName'];
     // @ts-expect-error

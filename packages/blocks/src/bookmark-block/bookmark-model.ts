@@ -1,27 +1,9 @@
-import { BaseBlockModel, defineBlockSchema } from '@blocksuite/store';
+import { BlockModel, defineBlockSchema } from '@blocksuite/store';
 
 import { selectable } from '../_common/edgeless/mixin/index.js';
+import type { LinkPreviewData } from '../_common/embed-block-helper/index.js';
+import type { EmbedCardStyle } from '../_common/types.js';
 import type { SerializedXYWH } from '../surface-block/utils/xywh.js';
-
-export type BookmarkBlockType = 'horizontal' | 'list' | 'vertical' | 'cube';
-
-export interface BookmarkBlockUrlData {
-  description: string | null;
-  icon: string | null;
-  image: string | null;
-  title: string | null;
-
-  /**
-   * @deprecated
-   * use `title` instead
-   */
-  // bookmarkTitle: string;
-  /**
-   * @deprecated
-   * we don't need this anymore
-   */
-  // crawled: boolean;
-}
 
 export interface BookmarkBlockEdgelessProps {
   index: string;
@@ -29,21 +11,22 @@ export interface BookmarkBlockEdgelessProps {
   rotate: number;
 }
 
+export const BookmarkStyles: EmbedCardStyle[] = [
+  'vertical',
+  'horizontal',
+  'list',
+  'cube',
+] as const;
+
 export type BookmarkBlockProps = {
-  style: BookmarkBlockType;
+  style: (typeof BookmarkStyles)[number];
   url: string;
   caption: string | null;
-
-  /**
-   * @deprecated
-   * we will use another block to handle embed
-   */
-  // type: 'card' | 'embed';
-} & BookmarkBlockUrlData &
+} & LinkPreviewData &
   BookmarkBlockEdgelessProps;
 
 const defaultBookmarkProps: BookmarkBlockProps = {
-  style: 'horizontal',
+  style: BookmarkStyles[1],
   url: '',
   caption: null,
 
@@ -69,5 +52,5 @@ export const BookmarkBlockSchema = defineBlockSchema({
 });
 
 export class BookmarkBlockModel extends selectable<BookmarkBlockProps>(
-  BaseBlockModel
+  BlockModel
 ) {}

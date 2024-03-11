@@ -1,8 +1,9 @@
+import type { SurfaceBlockComponent } from '@blocksuite/blocks';
 import { EdgelessEditorBlockSpecs } from '@blocksuite/blocks';
 import { noop } from '@blocksuite/global/utils';
 import { EditorHost, ShadowlessElement, WithDisposable } from '@blocksuite/lit';
-import type { Page } from '@blocksuite/store';
-import { html } from 'lit';
+import type { Doc } from '@blocksuite/store';
+import { css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { createRef, type Ref, ref } from 'lit/directives/ref.js';
 
@@ -10,40 +11,73 @@ noop(EditorHost);
 
 @customElement('edgeless-editor')
 export class EdgelessEditor extends WithDisposable(ShadowlessElement) {
+  static override styles = css`
+    edgeless-editor {
+      font-family: var(--affine-font-family);
+      background: var(--affine-background-primary-color);
+    }
+
+    edgeless-editor * {
+      box-sizing: border-box;
+    }
+
+    @media print {
+      edgeless-editor {
+        height: auto;
+      }
+    }
+
+    .affine-edgeless-viewport {
+      display: block;
+      height: 100%;
+      position: relative;
+      overflow: hidden;
+      container-name: viewport;
+      container-type: inline-size;
+    }
+  `;
+
   @property({ attribute: false })
-  page!: Page;
+  doc!: Doc;
 
   @property({ attribute: false })
   specs = EdgelessEditorBlockSpecs;
 
-  host: Ref<EditorHost> = createRef<EditorHost>();
+  private _host: Ref<EditorHost> = createRef<EditorHost>();
+
+  get host() {
+    return this._host.value as EditorHost;
+  }
 
   override render() {
     return html`
-      <style>
-        edgeless-editor * {
-          box-sizing: border-box;
-        }
-        edgeless-editor {
-          display: block;
-          height: 100%;
-          position: relative;
-          overflow: hidden;
-          font-family: var(--affine-font-family);
-          background: var(--affine-background-primary-color);
-        }
-        @media print {
-          edgeless-editor {
-            height: auto;
-          }
-        }
-      </style>
-      <editor-host
-        ${ref(this.host)}
-        .page=${this.page}
-        .specs=${this.specs}
-      ></editor-host>
+      <div class="affine-edgeless-viewport">
+        <editor-host
+          ${ref(this._host)}
+          .doc=${this.doc}
+          .specs=${this.specs}
+        ></editor-host>
+      </div>
     `;
+  }
+
+  override disconnectedCallback(): void {
+    const host = this.host;
+    if (!host) return;
+    const surfaceModel = host.doc.getBlockByFlavour('affine:surface')[0];
+    const surface = host.view.viewFromPath('block', [
+      this.doc.root!.id,
+      surfaceModel.id,
+    ]) as SurfaceBlockComponent;
+
+    if (!surface) return;
+
+    const { edgeless } = surface;
+    edgeless.service.editSession.setItem('viewport', {
+      centerX: edgeless.service.viewport.centerX,
+      centerY: edgeless.service.viewport.centerY,
+      zoom: edgeless.service.viewport.zoom,
+    });
   }
 }
 

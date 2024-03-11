@@ -1,26 +1,25 @@
-import type { Workspace } from '@blocksuite/store';
+import type { DocCollection } from '@blocksuite/store';
 
-export async function createDefaultPage(
-  workspace: Workspace,
+export function createDefaultDoc(
+  collection: DocCollection,
   options: { id?: string; title?: string } = {}
 ) {
-  const page = workspace.createPage({ id: options.id });
+  const doc = collection.createDoc({ id: options.id });
 
-  await page.load(() => {
-    const title = options.title ?? '';
-    const pageBlockId = page.addBlock('affine:page', {
-      title: new page.Text(title),
-    });
-    workspace.setPageMeta(page.id, {
-      title,
-    });
-    page.addBlock('affine:surface', {}, pageBlockId);
-    const noteId = page.addBlock('affine:note', {}, pageBlockId);
-    page.addBlock('affine:paragraph', {}, noteId);
-    // To make sure the content of new page would not be clear
-    // By undo operation for the first time
-    page.resetHistory();
+  doc.load();
+  const title = options.title ?? '';
+  const rootId = doc.addBlock('affine:page', {
+    title: new doc.Text(title),
   });
+  collection.setDocMeta(doc.id, {
+    title,
+  });
+  doc.addBlock('affine:surface', {}, rootId);
+  const noteId = doc.addBlock('affine:note', {}, rootId);
+  doc.addBlock('affine:paragraph', {}, noteId);
+  // To make sure the content of new doc would not be clear
+  // By undo operation for the first time
+  doc.resetHistory();
 
-  return page;
+  return doc;
 }

@@ -1,27 +1,32 @@
+import './page-editor.js';
+import './edgeless-editor.js';
+import '../fragments/doc-title/doc-title.js';
+import '../fragments/doc-meta-tags/doc-meta-tags.js';
+
 import type {
   AbstractEditor,
-  DocPageBlockComponent,
-  EdgelessPageBlockComponent,
-  PageBlockModel,
+  EdgelessRootBlockComponent,
+  PageRootBlockComponent,
+  PageRootService,
 } from '@blocksuite/blocks';
 import {
-  DocEditorBlockSpecs,
   EdgelessEditorBlockSpecs,
+  PageEditorBlockSpecs,
   ThemeObserver,
 } from '@blocksuite/blocks';
-import { noop, Slot } from '@blocksuite/global/utils';
+import { assertExists, Slot } from '@blocksuite/global/utils';
 import { ShadowlessElement, WithDisposable } from '@blocksuite/lit';
-import type { Page } from '@blocksuite/store';
-import { html, nothing } from 'lit';
+import type { Doc } from '@blocksuite/store';
+import { css, html } from 'lit';
 import { customElement, property, query } from 'lit/decorators.js';
 import { keyed } from 'lit/directives/keyed.js';
 
-import { DocEditor } from './doc-editor.js';
-import { EdgelessEditor } from './edgeless-editor.js';
+import type { EdgelessEditor } from './edgeless-editor.js';
+import type { PageEditor } from './page-editor.js';
 
-noop(DocEditor);
-noop(EdgelessEditor);
-
+/**
+ * @deprecated need to refactor
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function forwardSlot<T extends Record<string, Slot<any>>>(
   from: T,
@@ -40,125 +45,207 @@ export class AffineEditorContainer
   extends WithDisposable(ShadowlessElement)
   implements AbstractEditor
 {
-  @property({ attribute: false })
-  page!: Page;
+  static override styles = css`
+    .affine-page-viewport {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow-x: hidden;
+      overflow-y: auto;
+      container-name: viewport;
+      container-type: inline-size;
+      background: var(--affine-background-primary-color);
+      font-family: var(--affine-font-family);
+    }
+    .affine-page-viewport * {
+      box-sizing: border-box;
+    }
 
-  /** Due to product naming, `DocEditor` may be referred to as "page mode" */
+    @media print {
+      .affine-page-viewport {
+        height: auto;
+      }
+    }
+
+    page-editor {
+      flex-grow: 1;
+    }
+  `;
+
+  @property({ attribute: false })
+  doc!: Doc;
+
   @property({ attribute: false })
   mode: 'page' | 'edgeless' = 'page';
 
   @property({ attribute: false })
-  docSpecs = DocEditorBlockSpecs;
+  pageSpecs = [...PageEditorBlockSpecs].map(spec => {
+    if (spec.schema.model.flavour === 'affine:page') {
+      const setup = spec.setup;
+      spec = {
+        ...spec,
+        setup: (slots, disposable) => {
+          setup?.(slots, disposable);
+          slots.mounted.once(({ service }) => {
+            disposable.add(
+              (<PageRootService>service).slots.editorModeSwitch.on(mode => {
+                this.mode = mode;
+              })
+            );
+          });
+        },
+      };
+    }
+    return spec;
+  });
 
   @property({ attribute: false })
-  edgelessSpecs = EdgelessEditorBlockSpecs;
+  edgelessSpecs = [...EdgelessEditorBlockSpecs].map(spec => {
+    if (spec.schema.model.flavour === 'affine:page') {
+      spec = {
+        ...spec,
+        setup: (slots, disposable) => {
+          slots.mounted.once(({ service }) => {
+            disposable.add(
+              (<PageRootService>service).slots.editorModeSwitch.on(mode => {
+                this.mode = mode;
+              })
+            );
+          });
+        },
+      };
+    }
+    return spec;
+  });
 
   @property({ attribute: false })
   override autofocus = false;
 
-  /** @deprecated unreliable since docSpecs can be overridden */
-  @query('affine-doc-page')
-  private _docPage?: DocPageBlockComponent;
+  @query('page-editor')
+  private _pageEditor?: PageEditor;
+  @query('edgeless-editor')
+  private _edgelessEditor?: EdgelessEditor;
 
-  /** @deprecated unreliable since edgelessSpecs can be overridden */
-  @query('affine-edgeless-page')
-  private _edgelessPage?: EdgelessPageBlockComponent;
-
-  get root() {
-    return this.mode === 'page'
-      ? this._docPage?.host
-      : this._edgelessPage?.host;
+  get editor() {
+    const editor =
+      this.mode === 'page' ? this._pageEditor : this._edgelessEditor;
+    assertExists(editor);
+    return editor;
+  }
+  get host() {
+    assertExists(this.editor);
+    return this.editor.host;
   }
 
-  readonly themeObserver = new ThemeObserver();
-
-  get model() {
-    return this.page.root as PageBlockModel | null;
+  get rootModel() {
+    assertExists(this.doc, 'Missing doc for EditorContainer.');
+    assertExists(this.doc.root, 'Missing root model for Doc.');
+    return this.doc.root;
   }
-
-  slots: AbstractEditor['slots'] = {
-    pageLinkClicked: new Slot(),
-    pageModeSwitched: new Slot(),
-    pageUpdated: new Slot(),
-    tagClicked: new Slot<{ tagId: string }>(),
-  };
 
   override async getUpdateComplete(): Promise<boolean> {
     const result = await super.getUpdateComplete();
-    const root = this.root;
-    if (root) {
-      await root.updateComplete;
-    }
+    const editor = this.editor;
+    assertExists(editor);
+    await editor.updateComplete;
     return result;
-  }
-
-  override connectedCallback() {
-    super.connectedCallback();
-
-    if (!this.page) {
-      throw new Error('Missing page for EditorContainer!');
-    }
-
-    // subscribe store
-    this._disposables.add(
-      this.page.slots.rootAdded.on(() => {
-        // add the 'page' as requesting property to
-        // make sure the `forwardSlot` is called in `updated` lifecycle
-        this.requestUpdate('page');
-      })
-    );
-
-    this.themeObserver.observe(document.documentElement);
-    this._disposables.add(this.themeObserver);
-  }
-
-  override disconnectedCallback() {
-    super.disconnectedCallback();
   }
 
   override firstUpdated() {
     if (this.mode === 'page') {
       setTimeout(() => {
         if (this.autofocus) {
-          this._docPage?.titleInlineEditor.focusEnd();
+          const richText = this.querySelector('rich-text');
+          assertExists(richText);
+          const inlineEditor = richText.inlineEditor;
+          assertExists(inlineEditor);
+          inlineEditor.focusEnd();
         }
       });
     }
   }
 
+  /** @deprecated unreliable since pageSpecs can be overridden */
+  @query('affine-page-root')
+  private _pageRoot?: PageRootBlockComponent;
+  /** @deprecated unreliable since edgelessSpecs can be overridden */
+  @query('affine-edgeless-root')
+  private _edgelessRoot?: EdgelessRootBlockComponent;
+
+  /**
+   * @deprecated need to refactor
+   */
+  readonly themeObserver = new ThemeObserver();
+
+  /**
+   * @deprecated need to refactor
+   */
+  slots: AbstractEditor['slots'] = {
+    docLinkClicked: new Slot(),
+    editorModeSwitched: new Slot(),
+    docUpdated: new Slot(),
+    tagClicked: new Slot<{ tagId: string }>(),
+  };
+
+  /**
+   * @deprecated need to refactor
+   */
+  override connectedCallback() {
+    super.connectedCallback();
+
+    assertExists(this.doc, 'Missing doc for EditorContainer.');
+    assertExists(this.doc.root, 'Missing root model for Doc.');
+
+    this.themeObserver.observe(document.documentElement);
+    this._disposables.add(this.themeObserver);
+  }
+
+  /**
+   * @deprecated need to refactor
+   */
   override updated(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('mode')) {
-      this.slots.pageModeSwitched.emit(this.mode);
+      this.slots.editorModeSwitched.emit(this.mode);
     }
 
-    if (changedProperties.has('page')) {
-      this.slots.pageUpdated.emit({ newPageId: this.page.id });
+    if (changedProperties.has('doc')) {
+      this.slots.docUpdated.emit({ newDocId: this.doc.id });
     }
 
-    if (!changedProperties.has('page') && !changedProperties.has('mode')) {
+    if (!changedProperties.has('doc') && !changedProperties.has('mode')) {
       return;
     }
 
     requestAnimationFrame(() => {
-      if (this._docPage) forwardSlot(this._docPage.slots, this.slots);
-      if (this._edgelessPage) forwardSlot(this._edgelessPage.slots, this.slots);
+      if (this._pageRoot) forwardSlot(this._pageRoot.slots, this.slots);
+      if (this._edgelessRoot) forwardSlot(this._edgelessRoot.slots, this.slots);
     });
   }
 
   override render() {
-    if (!this.model) return nothing;
-
     return html`${keyed(
-      this.model.id,
+      this.rootModel.id,
       this.mode === 'page'
-        ? html`<doc-editor
-            .page=${this.page}
-            .specs=${this.docSpecs}
-          ></doc-editor>`
-        : html`<edgeless-editor
-            .page=${this.page}
-            .specs=${this.edgelessSpecs}
-          ></edgeless-editor>`
+        ? html`
+            <div class="affine-page-viewport">
+              <doc-title .doc=${this.doc}></doc-title>
+
+              <doc-meta-tags .doc=${this.doc}></doc-meta-tags>
+
+              <page-editor
+                .doc=${this.doc}
+                .specs=${this.pageSpecs}
+                .hasViewport=${false}
+              ></page-editor>
+            </div>
+          `
+        : html`
+            <edgeless-editor
+              .doc=${this.doc}
+              .specs=${this.edgelessSpecs}
+            ></edgeless-editor>
+          `
     )}`;
   }
 }

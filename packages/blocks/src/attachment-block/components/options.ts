@@ -14,8 +14,9 @@ import {
   ViewIcon,
 } from '../../_common/icons/index.js';
 import { stopPropagation } from '../../_common/utils/event.js';
+import type { AttachmentBlockComponent } from '../attachment-block.js';
 import type { AttachmentBlockModel } from '../attachment-model.js';
-import { allowEmbed, turnIntoEmbedAction } from '../embed.js';
+import { allowEmbed, convertToEmbed } from '../embed.js';
 import { MoreMenu } from './more-menu.js';
 import { RenameModal } from './rename-model.js';
 import { styles } from './styles.js';
@@ -28,7 +29,7 @@ export function AttachmentOptionsTemplate({
   abortController,
   ref: refOrCallback = createRef<HTMLDivElement>(),
 }: {
-  anchor: HTMLElement;
+  anchor: AttachmentBlockComponent;
   model: AttachmentBlockModel;
   downloadAttachment: (model: AttachmentBlockModel) => void | Promise<void>;
   showCaption: () => void;
@@ -52,7 +53,7 @@ export function AttachmentOptionsTemplate({
   };
 
   const disableEmbed = !allowEmbed(model);
-  const readonly = model.page.readonly;
+  const readonly = model.doc.readonly;
   let moreMenuAbortController: AbortController | null = null;
   return html`<style>
       ${styles}
@@ -69,7 +70,7 @@ export function AttachmentOptionsTemplate({
       </icon-button>
       <div class="divider" ?hidden=${true}></div>
 
-      <icon-button size="32px" ?hidden=${true || readonly}>
+      <icon-button size="32px" ?hidden=${true}>
         ${LinkIcon}
         <affine-tooltip .offset=${12}>Turn into Link view</affine-tooltip>
       </icon-button>
@@ -79,7 +80,7 @@ export function AttachmentOptionsTemplate({
         ?hidden=${!model.embed}
         ?disabled=${readonly}
         @click="${() => {
-          model.page.updateBlock(model, { embed: false });
+          model.doc.updateBlock(model, { embed: false });
           abortController.abort();
         }}"
       >
@@ -92,7 +93,7 @@ export function AttachmentOptionsTemplate({
         ?hidden=${model.embed}
         ?disabled=${readonly || disableEmbed}
         @click="${() => {
-          turnIntoEmbedAction(model);
+          convertToEmbed(model);
           abortController.abort();
         }}"
       >
@@ -109,12 +110,13 @@ export function AttachmentOptionsTemplate({
           const renameAbortController = new AbortController();
           createLitPortal({
             template: RenameModal({
+              editorHost: anchor.host,
               model,
               abortController: renameAbortController,
             }),
             computePosition: {
               referenceElement: anchor,
-              placement: 'top-end',
+              placement: 'top-start',
               middleware: [flip(), offset(4)],
               // It has a overlay mask, so we don't need to update the position.
               // autoUpdate: true,
@@ -156,7 +158,7 @@ export function AttachmentOptionsTemplate({
             computePosition: {
               referenceElement: containerEl,
               placement: 'top-end',
-              middleware: [flip(), offset(4)],
+              middleware: [flip()],
             },
           });
         }}

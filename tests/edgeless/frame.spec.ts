@@ -57,7 +57,7 @@ test.describe('frame', () => {
       await setEdgelessTool(page, 'frame');
       const frameMenu = page.locator('edgeless-frame-menu');
       await expect(frameMenu).toBeVisible();
-      const button = await page.locator('.frame-add-button:nth-of-type(2)');
+      const button = page.locator('.frame-add-button:nth-of-type(2)');
       await button.click();
       await assertSelectedBound(page, [-500, -550, 1200, 1200]);
     });
@@ -68,8 +68,8 @@ test.describe('frame', () => {
     await autoFit(page);
     await dragBetweenViewCoords(page, [100, 50], [105, 50]);
     await selectAllByKeyboard(page);
-    await assertSelectedBound(page, [5, 0, 100, 100], 1);
-    await assertSelectedBound(page, [105, 0, 100, 100], 2);
+    await assertSelectedBound(page, [5, 0, 100, 100], 0);
+    await assertSelectedBound(page, [105, 0, 100, 100], 1);
   });
 
   test('edit frame title', async ({ page }) => {

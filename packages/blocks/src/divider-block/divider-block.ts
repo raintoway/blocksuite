@@ -1,4 +1,6 @@
 /// <reference types="vite/client" />
+import '../_common/components/block-selection.js';
+
 import { BlockElement } from '@blocksuite/lit';
 import { css, html } from 'lit';
 import { customElement } from 'lit/decorators.js';
@@ -29,30 +31,32 @@ export class DividerBlockComponent extends BlockElement<DividerBlockModel> {
   override connectedCallback() {
     super.connectedCallback();
 
+    this.contentEditable = 'false';
+
     this.handleEvent('click', () => {
       this.host.selection.set([
-        this.host.selection.getInstance('block', {
+        this.host.selection.create('block', {
           path: this.path,
         }),
       ]);
     });
   }
 
-  override render() {
+  override renderBlock() {
     const children = html`<div
       class="affine-block-children-container"
       style="padding-left: ${BLOCK_CHILDREN_CONTAINER_PADDING_LEFT}px"
     >
-      ${this.renderModelChildren(this.model)}
+      ${this.renderChildren(this.model)}
     </div>`;
 
     return html`
       <div class="affine-divider-block-container">
         <hr />
+
         ${children}
-        ${this.selected?.is('block')
-          ? html`<affine-block-selection></affine-block-selection>`
-          : null}
+
+        <affine-block-selection .block=${this}></affine-block-selection>
       </div>
     `;
   }

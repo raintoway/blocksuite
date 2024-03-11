@@ -1,110 +1,47 @@
-import { BlocksUtils } from '@blocksuite/blocks';
-import type { BlockElement, EditorHost } from '@blocksuite/lit';
-import { type BaseBlockModel, Slice } from '@blocksuite/store';
+import {
+  BlocksUtils,
+  type EdgelessBlock,
+  EdgelessRootService,
+  type FrameBlockModel,
+  type ImageBlockModel,
+  type SurfaceBlockComponent,
+} from '@blocksuite/blocks';
+import { assertExists } from '@blocksuite/global/utils';
+import type { EditorHost } from '@blocksuite/lit';
+import { Slice } from '@blocksuite/store';
 
-import type { AffineEditorContainer } from '../../../editors/index.js';
 import { getMarkdownFromSlice } from './markdown-utils.js';
-import { getEdgelessPageBlockFromEditor } from './mind-map-utils.js';
 
-export function hasSelectedTextContent(host: EditorHost) {
-  let result = false;
+export const getRootService = (host: EditorHost) => {
+  return host.std.spec.getService('affine:page');
+};
 
-  host.std.command
-    .pipe()
-    .getBlockSelections()
-    .inline((ctx, next) => {
-      const selections = ctx.currentBlockSelections;
-      if (!selections) return;
-
-      result = selections
-        .map(
-          selection => ctx.std.view.viewFromPath('block', selection.path)?.model
-        )
-        .some(
-          model =>
-            model &&
-            BlocksUtils.matchFlavours(model, [
-              'affine:paragraph',
-              'affine:list',
-              'affine:code',
-            ])
-        );
-      return next();
-    })
-    .run();
-
-  return result;
+export function getEdgelessRootFromEditor(editor: EditorHost) {
+  const edgelessRoot = editor.getElementsByTagName('affine-edgeless-root')[0];
+  if (!edgelessRoot) {
+    alert('Please switch to edgeless mode');
+    throw new Error('Please open switch to edgeless mode');
+  }
+  return edgelessRoot;
+}
+export function getEdgelessService(editor: EditorHost) {
+  const rootService = editor.std.spec.getService('affine:page');
+  if (rootService instanceof EdgelessRootService) {
+    return rootService;
+  }
+  alert('Please switch to edgeless mode');
+  throw new Error('Please open switch to edgeless mode');
 }
 
-export async function getSelectedTextSlice(host: EditorHost) {
-  let models: BaseBlockModel[] = [];
-
-  host.std.command
-    .pipe()
-    .getBlockSelections()
-    .inline((ctx, next) => {
-      const selections = ctx.currentBlockSelections;
-      if (!selections) return;
-
-      models = selections
-        .map(
-          selection => ctx.std.view.viewFromPath('block', selection.path)?.model
-        )
-        .filter(
-          (model): model is BaseBlockModel<object> =>
-            model !== undefined &&
-            BlocksUtils.matchFlavours(model, [
-              'affine:paragraph',
-              'affine:list',
-              'affine:code',
-            ])
-        );
-
-      return next();
-    })
-    .run();
-
-  return Slice.fromModels(host.std.page, models);
-}
-
-export async function getSelectedBlocks(host: EditorHost) {
-  let blocks: BlockElement[] = [];
-
-  host.std.command
-    .pipe()
-    .getBlockSelections()
-    .inline((ctx, next) => {
-      const selections = ctx.currentBlockSelections;
-      if (!selections) return;
-
-      blocks = selections
-        .map(selection => ctx.std.view.viewFromPath('block', selection.path))
-        .filter(
-          (block): block is BlockElement =>
-            block !== null &&
-            BlocksUtils.matchFlavours(block.model, [
-              'affine:paragraph',
-              'affine:list',
-              'affine:code',
-            ])
-        );
-
-      return next();
-    })
-    .run();
-
-  return blocks;
-}
-
-export async function selectedToCanvas(editor: AffineEditorContainer) {
-  const edgelessPage = getEdgelessPageBlockFromEditor(editor);
+export async function selectedToCanvas(editor: EditorHost) {
+  const edgelessRoot = getEdgelessRootFromEditor(editor);
   const { notes, frames, shapes, images } = BlocksUtils.splitElements(
-    edgelessPage.selectionManager.elements
+    edgelessRoot.service.selection.elements
   );
   if (notes.length + frames.length + images.length + shapes.length === 0) {
     return;
   }
-  const canvas = await edgelessPage.clipboardController.toCanvas(
+  const canvas = await edgelessRoot.clipboardController.toCanvas(
     [...notes, ...frames, ...images],
     shapes
   );
@@ -114,15 +51,68 @@ export async function selectedToCanvas(editor: AffineEditorContainer) {
   return canvas;
 }
 
-export async function selectedToPng(editor: AffineEditorContainer) {
+export async function frameToCanvas(
+  frame: FrameBlockModel,
+  editor: EditorHost
+) {
+  const edgelessRoot = getEdgelessRootFromEditor(editor);
+  const { notes, frames, shapes, images } = BlocksUtils.splitElements(
+    edgelessRoot.service.frame.getElementsInFrame(frame, true)
+  );
+  if (notes.length + frames.length + images.length + shapes.length === 0) {
+    return;
+  }
+  const canvas = await edgelessRoot.clipboardController.toCanvas(
+    [...notes, ...frames, ...images],
+    shapes
+  );
+  if (!canvas) {
+    return;
+  }
+  return canvas;
+}
+
+export async function selectedToPng(editor: EditorHost) {
   return (await selectedToCanvas(editor))?.toDataURL('image/png');
 }
 
-export async function getSelectedTextContent(host: EditorHost) {
-  const slice = await getSelectedTextSlice(host);
-  return await getMarkdownFromSlice(host, slice);
+export async function getSelectedTextContent(editorHost: EditorHost) {
+  const slice = Slice.fromModels(
+    editorHost.std.doc,
+    getRootService(editorHost).selectedModels
+  );
+  return getMarkdownFromSlice(editorHost, slice);
 }
 
 export const stopPropagation = (e: Event) => {
   e.stopPropagation();
+};
+
+export function getSurfaceElementFromEditor(editor: EditorHost) {
+  const { doc } = editor;
+  const surfaceModel = doc.getBlockByFlavour('affine:surface')[0];
+  assertExists(surfaceModel);
+
+  const surfaceId = surfaceModel.id;
+  const surfaceElement = editor.querySelector(
+    `affine-surface[data-block-id="${surfaceId}"]`
+  ) as SurfaceBlockComponent;
+  assertExists(surfaceElement);
+
+  return surfaceElement;
+}
+
+export const getFirstImageInFrame = (
+  frame: FrameBlockModel,
+  editor: EditorHost
+) => {
+  const edgelessRoot = getEdgelessRootFromEditor(editor);
+  const elements = edgelessRoot.service.frame.getElementsInFrame(frame, false);
+  const image = elements.find(ele => {
+    if (!BlocksUtils.isCanvasElement(ele)) {
+      return (ele as EdgelessBlock).flavour === 'affine:image';
+    }
+    return false;
+  }) as ImageBlockModel | undefined;
+  return image?.id;
 };

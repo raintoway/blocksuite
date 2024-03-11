@@ -1,7 +1,5 @@
-import {
-  type EdgelessPageBlockComponent,
-  EdgelessPresentationConsts as PresentationConsts,
-} from '@blocksuite/blocks';
+import { type EdgelessRootBlockComponent } from '@blocksuite/blocks';
+import type { EditorHost } from '@blocksuite/lit';
 import { WithDisposable } from '@blocksuite/lit';
 import { css, html, LitElement, type PropertyValues } from 'lit';
 import { property, state } from 'lit/decorators.js';
@@ -73,7 +71,10 @@ export class FramesSettingMenu extends WithDisposable(LitElement) {
   static override styles = styles;
 
   @property({ attribute: false })
-  edgeless!: EdgelessPageBlockComponent | null;
+  edgeless!: EdgelessRootBlockComponent | null;
+
+  @property({ attribute: false })
+  editorHost!: EditorHost;
 
   @state()
   blackBackground = false;
@@ -84,15 +85,17 @@ export class FramesSettingMenu extends WithDisposable(LitElement) {
   @state()
   hideToolbar = false;
 
+  private get _rootService() {
+    return this.editorHost.spec.getService('affine:page');
+  }
+
   private _tryRestoreSettings() {
-    const blackBackground = sessionStorage.getItem(
-      PresentationConsts.BlackBackground
-    );
-    const fillScreen = sessionStorage.getItem(PresentationConsts.FillScreen);
-    const hideToolbar = sessionStorage.getItem(PresentationConsts.HideToolbar);
-    this.blackBackground = blackBackground === 'true';
-    this.fillScreen = fillScreen === 'true';
-    this.hideToolbar = hideToolbar === 'true';
+    const { editSession } = this._rootService;
+    const blackBackground = editSession.getItem('presentBlackBackground');
+
+    this.blackBackground = blackBackground ? blackBackground : true;
+    this.fillScreen = editSession.getItem('presentFillScreen') ?? false;
+    this.hideToolbar = editSession.getItem('presentHideToolbar') ?? false;
   }
 
   private _onBlackBackgroundChange = (checked: boolean) => {
@@ -107,10 +110,7 @@ export class FramesSettingMenu extends WithDisposable(LitElement) {
     this.edgeless?.slots.navigatorSettingUpdated.emit({
       fillScreen: this.fillScreen,
     });
-    sessionStorage.setItem(
-      PresentationConsts.FillScreen,
-      this.fillScreen.toString()
-    );
+    this._rootService.editSession.setItem('presentFillScreen', this.fillScreen);
   };
 
   private _onHideToolBarChange = (checked: boolean) => {
@@ -118,9 +118,9 @@ export class FramesSettingMenu extends WithDisposable(LitElement) {
     this.edgeless?.slots.navigatorSettingUpdated.emit({
       hideToolbar: this.hideToolbar,
     });
-    sessionStorage.setItem(
-      PresentationConsts.HideToolbar,
-      this.hideToolbar.toString()
+    this._rootService.editSession.setItem(
+      'presentHideToolbar',
+      this.hideToolbar
     );
   };
 

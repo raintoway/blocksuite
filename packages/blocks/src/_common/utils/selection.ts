@@ -2,16 +2,16 @@ import { IS_FIREFOX } from '@blocksuite/global/env';
 import { assertExists } from '@blocksuite/global/utils';
 import { type InlineRange, type VLine } from '@blocksuite/inline';
 import type { EditorHost } from '@blocksuite/lit';
-import type { BaseBlockModel, Page } from '@blocksuite/store';
+import type { BlockModel } from '@blocksuite/store';
 
-import type { DocPageBlockComponent } from '../../page-block/doc/doc-page-block.js';
+import type { PageRootBlockComponent } from '../../root-block/page/page-root-block.js';
 import type { SelectionPosition } from '../types.js';
 import { matchFlavours } from './model.js';
 import {
   asyncGetRichTextByModel,
   buildPath,
-  getDocPageByEditorHost,
-  getDocPageByElement,
+  getDocTitleInlineEditor,
+  getPageRootByElement,
 } from './query.js';
 import { Rect } from './rect.js';
 
@@ -29,10 +29,11 @@ declare global {
 }
 
 export async function asyncSetInlineRange(
-  model: BaseBlockModel,
+  editorHost: EditorHost,
+  model: BlockModel,
   inlineRange: InlineRange
 ) {
-  const richText = await asyncGetRichTextByModel(model);
+  const richText = await asyncGetRichTextByModel(editorHost, model);
   if (!richText) {
     return;
   }
@@ -44,17 +45,25 @@ export async function asyncSetInlineRange(
 }
 
 export function asyncFocusRichText(
-  page: Page,
+  editorHost: EditorHost,
   id: string,
   inlineRange: InlineRange = { index: 0, length: 0 }
 ) {
-  const model = page.getBlockById(id);
+  const doc = editorHost.doc;
+  const model = doc.getBlockById(id);
   assertExists(model);
   if (matchFlavours(model, ['affine:divider'])) return;
-  return asyncSetInlineRange(model, inlineRange);
+  return asyncSetInlineRange(editorHost, model, inlineRange);
 }
 
-function caretRangeFromPoint(clientX: number, clientY: number): Range | null {
+/**
+ * A wrapper for the browser's `caretPositionFromPoint` and `caretRangeFromPoint`,
+ * but adapted for different browsers.
+ */
+export function caretRangeFromPoint(
+  clientX: number,
+  clientY: number
+): Range | null {
   if (IS_FIREFOX) {
     const caret = document.caretPositionFromPoint(clientX, clientY);
     // TODO handle caret is covered by popup
@@ -113,10 +122,10 @@ function setEndRange(editableContainer: Element) {
   return newRange;
 }
 
-async function setNewTop(y: number, editableContainer: Element, zoom = 1) {
+function setNewTop(y: number, editableContainer: Element, zoom = 1) {
   const SCROLL_THRESHOLD = 100;
 
-  const scrollContainer = editableContainer.closest('.affine-doc-viewport');
+  const scrollContainer = editableContainer.closest('.affine-page-viewport');
   const { top, bottom } = Rect.fromDOM(editableContainer);
   const { clientHeight } = document.documentElement;
   const lineHeight =
@@ -158,26 +167,23 @@ async function setNewTop(y: number, editableContainer: Element, zoom = 1) {
  */
 export function focusTitle(editorHost: EditorHost, index = Infinity, len = 0) {
   // TODO support SelectionPosition
-  const docPageComponent = getDocPageByEditorHost(editorHost);
-  if (!docPageComponent) {
-    throw new Error("Can't find page component!");
+
+  const titleInlineEditor = getDocTitleInlineEditor(editorHost);
+  assertExists(titleInlineEditor);
+
+  if (index > titleInlineEditor.yText.length) {
+    index = titleInlineEditor.yText.length;
   }
-  if (!docPageComponent.titleInlineEditor) {
-    throw new Error("Can't find title inline editor!");
-  }
-  if (index > docPageComponent.titleInlineEditor.yText.length) {
-    index = docPageComponent.titleInlineEditor.yText.length;
-  }
-  docPageComponent.titleInlineEditor.setInlineRange({ index, length: len });
+  titleInlineEditor.setInlineRange({ index, length: len });
 }
 
-async function focusRichText(
+function focusRichText(
   editableContainer: Element,
   position: SelectionPosition = 'end',
   zoom = 1
 ) {
-  const isDocPage = !!getDocPageByElement(editableContainer);
-  if (isDocPage) {
+  const isPageRoot = !!getPageRootByElement(editableContainer);
+  if (isPageRoot) {
     editableContainer
       .querySelector<VLine>('v-line')
       ?.scrollIntoView({ block: 'nearest' });
@@ -197,7 +203,7 @@ async function focusRichText(
     default: {
       const { x, y } = position;
       let newLeft = x;
-      const newTop = await setNewTop(y, editableContainer, zoom);
+      const newTop = setNewTop(y, editableContainer, zoom);
       if (x <= left) {
         newLeft = left + 1;
       }
@@ -216,25 +222,26 @@ async function focusRichText(
  */
 export function focusBlockByModel(
   editorHost: EditorHost,
-  model: BaseBlockModel,
+  model: BlockModel,
   position: SelectionPosition = 'end',
   zoom = 1
 ) {
   if (matchFlavours(model, ['affine:note', 'affine:page'])) {
-    throw new Error("Can't focus note or page!");
+    throw new Error("Can't focus note or doc!");
   }
 
-  assertExists(model.page.root);
-  const pageBlock = editorHost.view.viewFromPath('block', [
-    model.page.root.id,
-  ]) as DocPageBlockComponent;
-  assertExists(pageBlock);
+  assertExists(model.doc.root);
+  const rootElement = editorHost.view.viewFromPath('block', [
+    model.doc.root.id,
+  ]) as PageRootBlockComponent;
+  assertExists(rootElement);
+  rootElement;
 
   const element = editorHost.view.viewFromPath('block', buildPath(model));
   assertExists(element);
   const editableContainer = element?.querySelector('[contenteditable]');
   if (editableContainer) {
-    focusRichText(editableContainer, position, zoom).catch(console.error);
+    focusRichText(editableContainer, position, zoom);
   }
 }
 
@@ -272,7 +279,7 @@ export function getCurrentNativeRange(selection = window.getSelection()) {
   if (!selection) {
     throw new Error('Failed to get current range, selection is null');
   }
-  // Before the user has clicked a freshly loaded page, the rangeCount is 0.
+  // Before the user has clicked a freshly loaded doc, the rangeCount is 0.
   // The rangeCount will usually be 1.
   // But scripting can be used to make the selection contain more than one range.
   // See https://developer.mozilla.org/en-US/docs/Web/API/Selection/rangeCount for more details.

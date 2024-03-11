@@ -2,24 +2,24 @@ import type { DeltaInsert } from '@blocksuite/inline/types';
 import type {
   FromBlockSnapshotPayload,
   FromBlockSnapshotResult,
-  FromPageSnapshotPayload,
-  FromPageSnapshotResult,
+  FromDocSnapshotPayload,
+  FromDocSnapshotResult,
   FromSliceSnapshotPayload,
   FromSliceSnapshotResult,
   ToBlockSnapshotPayload,
-  ToPageSnapshotPayload,
+  ToDocSnapshotPayload,
 } from '@blocksuite/store';
 import { type AssetsManager, getAssetName } from '@blocksuite/store';
 import {
   type BlockSnapshot,
   BlockSnapshotSchema,
-  type PageSnapshot,
+  type DocSnapshot,
   type SliceSnapshot,
 } from '@blocksuite/store';
 import { nanoid } from '@blocksuite/store';
 import { ASTWalker, BaseAdapter } from '@blocksuite/store';
 import { sha } from '@blocksuite/store';
-import format from 'date-fns/format/index.js';
+import { format } from 'date-fns/format';
 import type { Heading, Root, RootContentMap, TableRow } from 'mdast';
 import remarkParse from 'remark-parse';
 import remarkStringify from 'remark-stringify';
@@ -27,8 +27,10 @@ import { unified } from 'unified';
 
 import type { SerializedCells } from '../../database-block/database-model.js';
 import type { Column } from '../../database-block/types.js';
+import { NoteDisplayMode } from '../types.js';
 import { getFilenameFromContentDisposition } from '../utils/header-value-parser.js';
 import { remarkGfm } from './gfm.js';
+import { fetchImage } from './utils.js';
 
 export type Markdown = string;
 
@@ -44,7 +46,6 @@ type MarkdownAST =
 type MarkdownToSliceSnapshotPayload = {
   file: Markdown;
   assets?: AssetsManager;
-  blockVersions: Record<string, number>;
   pageVersion: number;
   workspaceVersion: number;
   workspaceId: string;
@@ -52,14 +53,11 @@ type MarkdownToSliceSnapshotPayload = {
 };
 
 export class MarkdownAdapter extends BaseAdapter<Markdown> {
-  async fromPageSnapshot({
+  async fromDocSnapshot({
     snapshot,
     assets,
-  }: FromPageSnapshotPayload): Promise<FromPageSnapshotResult<Markdown>> {
+  }: FromDocSnapshotPayload): Promise<FromDocSnapshotResult<Markdown>> {
     let buffer = '';
-    if (snapshot.meta.title) {
-      buffer += `# ${snapshot.meta.title}\n\n`;
-    }
     const { file, assetsIds } = await this.fromBlockSnapshot({
       snapshot: snapshot.blocks,
       assets,
@@ -117,33 +115,34 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
     };
   }
 
-  async toPageSnapshot(
-    payload: ToPageSnapshotPayload<Markdown>
-  ): Promise<PageSnapshot> {
+  async toDocSnapshot(
+    payload: ToDocSnapshotPayload<Markdown>
+  ): Promise<DocSnapshot> {
     const markdownAst = this._markdownToAst(payload.file);
     const blockSnapshotRoot = {
       type: 'block',
-      id: nanoid('block'),
+      id: nanoid(),
       flavour: 'affine:note',
       props: {
         xywh: '[0,0,800,95]',
         background: '--affine-background-secondary-color',
         index: 'a0',
         hidden: false,
+        displayMode: NoteDisplayMode.DocAndEdgeless,
       },
       children: [],
     };
     return {
       type: 'page',
       meta: {
-        id: nanoid('page'),
+        id: nanoid(),
         title: 'Untitled',
-        createDate: +new Date(),
+        createDate: Date.now(),
         tags: [],
       },
       blocks: {
         type: 'block',
-        id: nanoid('block'),
+        id: nanoid(),
         flavour: 'affine:page',
         props: {
           title: {
@@ -158,7 +157,7 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
         children: [
           {
             type: 'block',
-            id: nanoid('block'),
+            id: nanoid(),
             flavour: 'affine:surface',
             props: {
               elements: {},
@@ -181,13 +180,14 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
     const markdownAst = this._markdownToAst(payload.file);
     const blockSnapshotRoot = {
       type: 'block',
-      id: nanoid('block'),
+      id: nanoid(),
       flavour: 'affine:note',
       props: {
         xywh: '[0,0,800,95]',
         background: '--affine-background-secondary-color',
         index: 'a0',
         hidden: false,
+        displayMode: NoteDisplayMode.DocAndEdgeless,
       },
       children: [],
     };
@@ -200,30 +200,41 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
 
   async toSliceSnapshot(
     payload: MarkdownToSliceSnapshotPayload
-  ): Promise<SliceSnapshot> {
+  ): Promise<SliceSnapshot | null> {
+    payload.file = payload.file
+      .split('\n')
+      .map(line => {
+        if (line.trimStart().startsWith('-')) {
+          return line;
+        }
+        return line.replace(/^ /, '&#x20;');
+      })
+      .join('\n');
     const markdownAst = this._markdownToAst(payload.file);
     const blockSnapshotRoot = {
       type: 'block',
-      id: nanoid('block'),
+      id: nanoid(),
       flavour: 'affine:note',
       props: {
         xywh: '[0,0,800,95]',
         background: '--affine-background-secondary-color',
         index: 'a0',
         hidden: false,
+        displayMode: NoteDisplayMode.DocAndEdgeless,
       },
       children: [],
     };
+    const contentSlice = (await this._traverseMarkdown(
+      markdownAst,
+      blockSnapshotRoot as BlockSnapshot,
+      payload.assets
+    )) as BlockSnapshot;
+    if (contentSlice.children.length === 0) {
+      return null;
+    }
     return {
       type: 'slice',
-      content: [
-        await this._traverseMarkdown(
-          markdownAst,
-          blockSnapshotRoot as BlockSnapshot,
-          payload.assets
-        ),
-      ],
-      blockVersions: payload.blockVersions,
+      content: [contentSlice],
       pageVersion: payload.pageVersion,
       workspaceVersion: payload.workspaceVersion,
       workspaceId: payload.workspaceId,
@@ -442,7 +453,8 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
           context
             .openNode(
               {
-                type: 'paragraph',
+                type: 'heading',
+                depth: 1,
                 children: this._deltaToMdAST(title.delta, 0),
               },
               'children'
@@ -577,10 +589,48 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
           context.skipAllChildren();
           break;
         }
+        case 'affine:embed-loom':
+        case 'affine:embed-github':
+        case 'affine:embed-youtube':
+        case 'affine:embed-figma':
+        case 'affine:bookmark': {
+          // Parse as link
+          if (
+            typeof o.node.props.title !== 'string' ||
+            typeof o.node.props.url !== 'string'
+          ) {
+            break;
+          }
+          context
+            .openNode(
+              {
+                type: 'paragraph',
+                children: [],
+              },
+              'children'
+            )
+            .openNode(
+              {
+                type: 'link',
+                url: o.node.props.url,
+                children: [
+                  {
+                    type: 'text',
+                    value: o.node.props.title,
+                  },
+                ],
+              },
+              'children'
+            )
+            .closeNode()
+            .closeNode();
+          break;
+        }
       }
     });
-    walker.setLeave(async (o, context) => {
+    walker.setLeave((o, context) => {
       const currentTNode = context.currentNode();
+      const previousTNode = context.previousNode();
       switch (o.node.flavour) {
         case 'affine:paragraph': {
           context.setGlobalContext(
@@ -591,15 +641,24 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
         }
         case 'affine:list': {
           if (
-            context.getNodeContext('affine:list:parent') === o.parent &&
-            currentTNode.type === 'list' &&
-            currentTNode.ordered === (o.node.props.type === 'numbered') &&
-            currentTNode.children[0].checked ===
+            context.getPreviousNodeContext('affine:list:parent') === o.parent &&
+            currentTNode.type === 'listItem' &&
+            previousTNode?.type === 'list' &&
+            previousTNode.ordered === (o.node.props.type === 'numbered') &&
+            previousTNode.children[0]?.checked ===
               (o.node.props.type === 'todo'
                 ? (o.node.props.checked as boolean)
                 : undefined)
           ) {
             context.closeNode();
+            const nextONode = o.parent!.children[o.index! + 1];
+            if (
+              !nextONode ||
+              (nextONode && nextONode.flavour !== 'affine:list')
+            ) {
+              // If the next node is not a list, close the list
+              context.closeNode();
+            }
           } else {
             context.closeNode().closeNode();
           }
@@ -632,7 +691,7 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
             .openNode(
               {
                 type: 'block',
-                id: nanoid('block'),
+                id: nanoid(),
                 flavour: 'affine:paragraph',
                 props: {
                   type: 'text',
@@ -657,10 +716,10 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
             .openNode(
               {
                 type: 'block',
-                id: nanoid('block'),
+                id: nanoid(),
                 flavour: 'affine:code',
                 props: {
-                  language: o.node.lang,
+                  language: o.node.lang ?? 'Plain Text',
                   text: {
                     '$blocksuite:internal:text$': true,
                     delta: [
@@ -682,7 +741,7 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
             .openNode(
               {
                 type: 'block',
-                id: nanoid('block'),
+                id: nanoid(),
                 flavour: 'affine:paragraph',
                 props: {
                   type: 'text',
@@ -703,7 +762,7 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
             .openNode(
               {
                 type: 'block',
-                id: nanoid('block'),
+                id: nanoid(),
                 flavour: 'affine:paragraph',
                 props: {
                   type: `h${o.node.depth}`,
@@ -724,7 +783,7 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
             .openNode(
               {
                 type: 'block',
-                id: nanoid('block'),
+                id: nanoid(),
                 flavour: 'affine:paragraph',
                 props: {
                   type: 'quote',
@@ -749,7 +808,7 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
           context.openNode(
             {
               type: 'block',
-              id: nanoid('block'),
+              id: nanoid(),
               flavour: 'affine:list',
               props: {
                 type:
@@ -783,7 +842,7 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
             .openNode(
               {
                 type: 'block',
-                id: nanoid('block'),
+                id: nanoid(),
                 flavour: 'affine:divider',
                 props: {},
                 children: [],
@@ -806,16 +865,20 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
               }
             });
           } else {
-            const res = await fetch(o.node.url);
+            const res = await fetchImage(
+              o.node.url,
+              undefined,
+              this.configs.get('imageProxy') as string
+            );
             const clonedRes = res.clone();
             const file = new File(
               [await res.blob()],
               getFilenameFromContentDisposition(
                 res.headers.get('Content-Disposition') ?? ''
               ) ??
-                o.node.url.split('/').at(-1) ??
-                'image' + res.headers.get('Content-Type')?.split('/').at(-1) ??
-                '.png'
+                (o.node.url.split('/').at(-1) ?? 'image') +
+                  '.' +
+                  (res.headers.get('Content-Type')?.split('/').at(-1) ?? 'png')
             );
             blobId = await sha(await clonedRes.arrayBuffer());
             assets?.getAssets().set(blobId, file);
@@ -825,7 +888,7 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
             .openNode(
               {
                 type: 'block',
-                id: nanoid('block'),
+                id: nanoid(),
                 flavour: 'affine:image',
                 props: {
                   sourceId: blobId,
@@ -840,14 +903,14 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
         case 'table': {
           const viewsColumns = o.node.children[0].children.map(() => {
             return {
-              id: nanoid('block'),
+              id: nanoid(),
               hide: false,
               width: 180,
             };
           });
           const cells = Object.create(null);
           o.node.children.slice(1).forEach(row => {
-            const rowId = nanoid('block');
+            const rowId = nanoid();
             cells[rowId] = Object.create(null);
             row.children.slice(1).forEach((cell, index) => {
               cells[rowId][viewsColumns[index + 1].id] = {
@@ -871,12 +934,12 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
           context.openNode(
             {
               type: 'block',
-              id: nanoid('block'),
+              id: nanoid(),
               flavour: 'affine:database',
               props: {
                 views: [
                   {
-                    id: nanoid('block'),
+                    id: nanoid(),
                     name: 'Table View',
                     mode: 'table',
                     columns: [],
@@ -913,7 +976,7 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
               id:
                 (
                   context.getNodeContext('affine:table:rowid') as Array<string>
-                ).shift() ?? nanoid('block'),
+                ).shift() ?? nanoid(),
               flavour: 'affine:paragraph',
               props: {
                 text: {
@@ -930,7 +993,7 @@ export class MarkdownAdapter extends BaseAdapter<Markdown> {
         }
       }
     });
-    walker.setLeave(async (o, context) => {
+    walker.setLeave((o, context) => {
       switch (o.node.type) {
         case 'listItem': {
           context.closeNode();

@@ -6,10 +6,10 @@ import {
   dragBetweenCoords,
   dragBetweenIndices,
   enterPlaygroundRoom,
-  extendFormatBar,
   focusRichText,
   focusTitle,
   getBoundingBox,
+  getEditorHostLocator,
   getSelectionRect,
   initEmptyParagraphState,
   initImageState,
@@ -21,6 +21,7 @@ import {
   scrollToBottom,
   scrollToTop,
   selectAllByKeyboard,
+  setInlineRangeInInlineEditor,
   setSelection,
   switchReadonly,
   type,
@@ -89,7 +90,7 @@ test('should format quick bar show when clicking drag handle', async ({
   if (!box) {
     throw new Error("formatBar doesn't exist");
   }
-  assertAlmostEqual(box.x, 264.5, 5);
+  assertAlmostEqual(box.x, 248.5, 5);
   assertAlmostEqual(box.y - dragHandleRect.y, -55.5, 5);
 });
 
@@ -210,6 +211,7 @@ test('should format quick bar be able to format text', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -267,6 +269,7 @@ test('should format quick bar be able to format text', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -333,6 +336,7 @@ test('should format quick bar be able to change background color', async ({
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -380,6 +384,7 @@ test('should format quick bar be able to change background color', async ({
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -431,6 +436,7 @@ test('should format quick bar be able to change background color', async ({
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -487,6 +493,7 @@ test('should format quick bar be able to format text when select multiple line',
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -544,6 +551,7 @@ test('should format quick bar be able to format text when select multiple line',
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -596,6 +604,7 @@ test('should format quick bar be able to link text', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -645,6 +654,7 @@ test('should format quick bar be able to link text', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -695,6 +705,7 @@ test('should format quick bar be able to change to heading paragraph type', asyn
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -731,6 +742,7 @@ test('should format quick bar be able to change to heading paragraph type', asyn
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -770,6 +782,7 @@ test('should format quick bar be able to change to heading paragraph type', asyn
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -829,7 +842,9 @@ test('should format quick bar show when double click text', async ({
   await enterPlaygroundRoom(page);
   await initEmptyParagraphState(page);
   await initThreeParagraphs(page);
-  await page.dblclick('rich-text', {
+  const editorHost = getEditorHostLocator(page);
+  const richText = editorHost.locator('rich-text').nth(0);
+  await richText.dblclick({
     position: { x: 10, y: 10 },
   });
   const { formatBar } = getFormatBar(page);
@@ -846,7 +861,11 @@ test('should format quick bar not show at readonly mode', async ({ page }) => {
   const { formatBar } = getFormatBar(page);
   await expect(formatBar).not.toBeVisible();
 
-  await page.dblclick('rich-text', { position: { x: 10, y: 10 } });
+  const editorHost = getEditorHostLocator(page);
+  const richText = editorHost.locator('rich-text').nth(0);
+  await richText.dblclick({
+    position: { x: 10, y: 10 },
+  });
   await expect(formatBar).not.toBeVisible();
 });
 
@@ -889,17 +908,18 @@ test('should format quick bar position correct at the start of second line', asy
 }) => {
   await enterPlaygroundRoom(page);
   await page.evaluate(() => {
-    const { page } = window;
-    const pageId = page.addBlock('affine:page', {
-      title: new page.Text(),
+    const { doc } = window;
+    const rootId = doc.addBlock('affine:page', {
+      title: new doc.Text(),
     });
-    const note = page.addBlock('affine:note', {}, pageId);
-    const text = new page.Text('a'.repeat(100));
-    const paragraphId = page.addBlock('affine:paragraph', { text }, note);
+    const note = doc.addBlock('affine:note', {}, rootId);
+    const text = new doc.Text('a'.repeat(100));
+    const paragraphId = doc.addBlock('affine:paragraph', { text }, note);
     return paragraphId;
   });
   // await focusRichText(page);
-  const locator = page.locator('.inline-editor').nth(0);
+  const editorHost = getEditorHostLocator(page);
+  const locator = editorHost.locator('.inline-editor').nth(0);
   const textBox = await locator.boundingBox();
   if (!textBox) {
     throw new Error("Can't get bounding box");
@@ -961,7 +981,9 @@ test('should format quick bar work in single block selection', async ({
     { x: -26 - 24, y: -10 },
     { x: 0, y: 0 }
   );
-  const blockSelections = page.locator('.selected,affine-block-selection');
+  const blockSelections = page
+    .locator('affine-block-selection')
+    .locator('visible=true');
   await expect(blockSelections).toHaveCount(1);
 
   const { formatBar } = getFormatBar(page);
@@ -971,8 +993,8 @@ test('should format quick bar work in single block selection', async ({
   const selectionRect = await blockSelections.boundingBox();
   assertExists(formatRect);
   assertExists(selectionRect);
-  assertAlmostEqual(formatRect.x - selectionRect.x, 160.5, 10);
-  assertAlmostEqual(formatRect.y - selectionRect.y, -50, 10);
+  assertAlmostEqual(formatRect.x - selectionRect.x, 144.5, 10);
+  assertAlmostEqual(formatRect.y - selectionRect.y, 33, 10);
 
   const boldBtn = formatBar.getByTestId('bold');
   await boldBtn.click();
@@ -991,6 +1013,7 @@ test('should format quick bar work in single block selection', async ({
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -1049,7 +1072,9 @@ test('should format quick bar work in multiple block selection', async ({
     { x: 20, y: 20 },
     { x: 0, y: 0 }
   );
-  const blockSelections = page.locator('.selected,affine-block-selection');
+  const blockSelections = page
+    .locator('affine-block-selection')
+    .locator('visible=true');
   await expect(blockSelections).toHaveCount(3);
 
   const formatBarController = getFormatBar(page);
@@ -1061,8 +1086,8 @@ test('should format quick bar work in multiple block selection', async ({
   }
   const rect = await blockSelections.first().boundingBox();
   assertExists(rect);
-  assertAlmostEqual(box.x - rect.x, 160.5, 10);
-  assertAlmostEqual(box.y - rect.y, -45, 10);
+  assertAlmostEqual(box.x - rect.x, 144.5, 10);
+  assertAlmostEqual(box.y - rect.y, 99, 10);
 
   await formatBarController.boldBtn.click();
   await formatBarController.italicBtn.click();
@@ -1077,6 +1102,7 @@ test('should format quick bar work in multiple block selection', async ({
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -1150,7 +1176,9 @@ test('should format quick bar with block selection works when update block type'
     { x: 20, y: 20 },
     { x: 0, y: 0 }
   );
-  const blockSelections = page.locator('.selected,affine-block-selection');
+  const blockSelections = page
+    .locator('affine-block-selection')
+    .locator('visible=true');
   await expect(blockSelections).toHaveCount(3);
 
   const formatBarController = getFormatBar(page);
@@ -1165,6 +1193,7 @@ test('should format quick bar with block selection works when update block type'
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -1207,6 +1236,7 @@ test('should format quick bar with block selection works when update block type'
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -1259,7 +1289,7 @@ test('should format quick bar show after convert to code block', async ({
     { x: 0, y: 0 }
   );
   await expect(formatBarController.formatBar).toBeVisible();
-  await formatBarController.assertBoundingBox(264.5, 194);
+  await formatBarController.assertBoundingBox(248.5, 343);
 
   await formatBarController.openParagraphMenu();
   await formatBarController.codeBlockBtn.click();
@@ -1268,6 +1298,7 @@ test('should format quick bar show after convert to code block', async ({
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -1297,32 +1328,46 @@ test('buttons in format quick bar should have correct active styles', async ({
   await initEmptyParagraphState(page);
   await initThreeParagraphs(page);
 
-  // drag only the `45`
-  await dragBetweenIndices(page, [1, 0], [1, 2]);
+  // `45`
+  await setInlineRangeInInlineEditor(
+    page,
+    {
+      index: 0,
+      length: 2,
+    },
+    2
+  );
   const { codeBtn } = getFormatBar(page);
   await codeBtn.click();
   await expect(codeBtn).toHaveAttribute('active', '');
 
-  // drag the `456`
-  await dragBetweenIndices(page, [1, 0], [1, 3]);
+  // `456`
+  await setInlineRangeInInlineEditor(
+    page,
+    {
+      index: 0,
+      length: 3,
+    },
+    2
+  );
   await expect(codeBtn).not.toHaveAttribute('active', '');
 });
 
 test('should format bar style active correctly', async ({ page }) => {
   await enterPlaygroundRoom(page);
   await page.evaluate(() => {
-    const { page } = window;
-    const pageId = page.addBlock('affine:page', {
-      title: new page.Text(),
+    const { doc } = window;
+    const rootId = doc.addBlock('affine:page', {
+      title: new doc.Text(),
     });
-    const note = page.addBlock('affine:note', {}, pageId);
+    const note = doc.addBlock('affine:note', {}, rootId);
     const delta = [
       { insert: '1', attributes: { bold: true, italic: true } },
       { insert: '2', attributes: { bold: true, underline: true } },
       { insert: '3', attributes: { bold: true, code: true } },
     ];
-    const text = page.Text.fromDelta(delta);
-    page.addBlock('affine:paragraph', { text }, note);
+    const text = doc.Text.fromDelta(delta);
+    doc.addBlock('affine:paragraph', { text }, note);
   });
 
   const { boldBtn, codeBtn, underlineBtn } = getFormatBar(page);
@@ -1346,7 +1391,9 @@ test('should format quick bar show when double click button', async ({
   await dragBetweenIndices(page, [0, 0], [2, 3]);
   const { formatBar, boldBtn } = getFormatBar(page);
   await expect(formatBar).toBeVisible();
-  await boldBtn.dblclick();
+  await boldBtn.dblclick({
+    delay: 100,
+  });
   await expect(formatBar).toBeVisible();
 });
 
@@ -1373,6 +1420,8 @@ test('should the database action icon show correctly', async ({ page }) => {
   const codeBlock = page.locator('affine-code');
   const codeBox = await codeBlock.boundingBox();
   if (!codeBox) throw new Error('Missing code block box');
+
+  await page.keyboard.type('hello world');
   const position = {
     startX: codeBox.x,
     startY: codeBox.y + codeBox.height / 2,
@@ -1382,12 +1431,11 @@ test('should the database action icon show correctly', async ({ page }) => {
   await page.mouse.click(position.endX + 150, position.endY + 150);
   await dragBetweenCoords(
     page,
-    { x: position.startX - 10, y: position.startY - 10 },
+    { x: position.startX + 10, y: position.startY - 10 },
     { x: position.endX, y: position.endY },
     { steps: 20 }
   );
-  await expect(databaseAction).toBeVisible();
-  await expect(databaseAction).toHaveAttribute('disabled', '');
+  await expect(databaseAction).not.toBeVisible();
 });
 
 test('should convert to database work', async ({ page }) => {
@@ -1420,7 +1468,8 @@ test('should show format-quick-bar and select all text of the block when triple 
   await focusRichText(page);
   await type(page, 'hello world');
 
-  const locator = page.locator('.inline-editor').nth(0);
+  const editorHost = getEditorHostLocator(page);
+  const locator = editorHost.locator('.inline-editor').nth(0);
   const textBox = await locator.boundingBox();
   if (!textBox) {
     throw new Error("Can't get bounding box");
@@ -1463,18 +1512,18 @@ test('should update the format quick bar state when there is a change in keyboar
 }) => {
   await enterPlaygroundRoom(page);
   await page.evaluate(() => {
-    const { page } = window;
-    const pageId = page.addBlock('affine:page', {
-      title: new page.Text(),
+    const { doc } = window;
+    const rootId = doc.addBlock('affine:page', {
+      title: new doc.Text(),
     });
-    const note = page.addBlock('affine:note', {}, pageId);
+    const note = doc.addBlock('affine:note', {}, rootId);
     const delta = [
       { insert: '1', attributes: { bold: true } },
       { insert: '2', attributes: { bold: true } },
       { insert: '3', attributes: { bold: false } },
     ];
-    const text = page.Text.fromDelta(delta);
-    page.addBlock('affine:paragraph', { text }, note);
+    const text = doc.Text.fromDelta(delta);
+    doc.addBlock('affine:paragraph', { text }, note);
   });
   await focusTitle(page);
   await pressArrowDown(page);
@@ -1487,15 +1536,6 @@ test('should update the format quick bar state when there is a change in keyboar
     await page.keyboard.press('ArrowRight');
     await expect(formatBar.boldBtn).not.toHaveAttribute('active', '');
   });
-});
-
-test('can extend format bar', async ({ page }) => {
-  await enterPlaygroundRoom(page);
-  await initEmptyParagraphState(page);
-  await initThreeParagraphs(page);
-  await extendFormatBar(page);
-  await dragBetweenIndices(page, [0, 0], [2, 3]);
-  await expect(page.getByTestId('custom-format-bar-element')).toBeVisible();
 });
 
 test('format quick bar should not break cursor jumping', async ({ page }) => {

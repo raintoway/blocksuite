@@ -57,14 +57,15 @@ export class DataViewHeaderToolsAddRow extends BaseTool {
     const tableRect = container
       ?.querySelector('affine-database-table')
       ?.getBoundingClientRect();
-    const rows = container?.querySelectorAll('.affine-database-block-row');
+    const rows: NodeListOf<HTMLElement> | undefined =
+      container?.querySelectorAll('.affine-database-block-row');
     if (!rows || !tableRect) {
       return;
     }
     const rects = Array.from(rows).map(v => {
       const rect = v.getBoundingClientRect();
       return {
-        id: v.getAttribute('data-row-id') as string,
+        id: v.dataset.rowId as string,
         top: rect.top,
         bottom: rect.bottom,
         mid: (rect.top + rect.bottom) / 2,
@@ -172,7 +173,8 @@ declare global {
 }
 const createDropPreview = () => {
   const div = document.createElement('div');
-  div.setAttribute('data-is-drop-preview', 'true');
+  div.classList.add('blocksuite-overlay');
+  div.dataset.isDropPreview = 'true';
   div.style.pointerEvents = 'none';
   div.style.position = 'fixed';
   div.style.zIndex = '9999';
@@ -195,6 +197,7 @@ const createDropPreview = () => {
 
 const createDragPreview = () => {
   const preview = new NewRecordPreview();
+  preview.classList.add('blocksuite-overlay');
   document.body.append(preview);
   return {
     display(x: number, y: number) {

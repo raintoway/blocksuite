@@ -1,35 +1,178 @@
 import { assertExists } from '@blocksuite/global/utils';
 import type { EditorHost } from '@blocksuite/lit';
-import type { BaseBlockModel, Page } from '@blocksuite/store';
-import { Buffer } from 'buffer';
+import type { BlockModel } from '@blocksuite/store';
 
+import { downloadBlob, withTempBlobData } from '../_common/utils/filesys.js';
 import { humanFileSize } from '../_common/utils/math.js';
+import type { AttachmentBlockProps } from '../attachment-block/attachment-model.js';
+import { readImageSize } from '../root-block/edgeless/components/utils.js';
+import { transformModel } from '../root-block/utils/operations/model.js';
 import { toast } from './../_common/components/toast.js';
-import { downloadBlob } from './../_common/utils/filesys.js';
-import { buildPath } from './../_common/utils/query.js';
-import { ImageBlockModel, type ImageBlockProps } from './image-model.js';
+import type { ImageBlockComponent } from './image-block.js';
+import type { ImageBlockModel, ImageBlockProps } from './image-model.js';
+
+const MAX_RETRY_COUNT = 3;
+const DEFAULT_ATTACHMENT_NAME = 'affine-attachment';
+
+const imageUploads = new Set<string>();
+export function setImageUploading(blockId: string) {
+  imageUploads.add(blockId);
+}
+export function setImageUploaded(blockId: string) {
+  imageUploads.delete(blockId);
+}
+export function isImageUploading(blockId: string) {
+  return imageUploads.has(blockId);
+}
+
+export async function uploadBlobForImage(
+  editorHost: EditorHost,
+  blockId: string,
+  blob: Blob
+): Promise<void> {
+  if (isImageUploading(blockId)) {
+    throw new Error('The image is already uploading!');
+  }
+  setImageUploading(blockId);
+  const doc = editorHost.doc;
+  let sourceId: string | undefined;
+
+  try {
+    setImageUploaded(blockId);
+    sourceId = await doc.blob.set(blob);
+  } catch (error) {
+    console.error(error);
+    if (error instanceof Error) {
+      toast(
+        editorHost,
+        `Failed to upload image! ${error.message || error.toString()}`
+      );
+    }
+  } finally {
+    setImageUploaded(blockId);
+
+    const imageModel = doc.getBlockById(blockId) as ImageBlockModel | null;
+    assertExists(imageModel);
+
+    doc.withoutTransact(() => {
+      doc.updateBlock(imageModel, {
+        sourceId,
+      } satisfies Partial<ImageBlockProps>);
+    });
+  }
+}
 
 async function getImageBlob(model: ImageBlockModel) {
-  const blob = await getBlobByModel(model);
+  const sourceId = model.sourceId;
+  if (!sourceId) {
+    return null;
+  }
 
-  if (!blob) return null;
+  const doc = model.doc;
+  const blob = await doc.blob.get(sourceId);
+
+  if (!blob) {
+    return null;
+  }
 
   if (!blob.type) {
-    // FIXME: this file-type will be removed in future, see https://github.com/toeverything/AFFiNE/issues/3245
-    // @ts-ignore
-    const FileType = await import('file-type/browser.js');
-    if (window.Buffer === undefined) {
-      window.Buffer = Buffer;
-    }
     const buffer = await blob.arrayBuffer();
-    const fileType = await FileType.fromBuffer(buffer);
 
-    if (!fileType?.mime.match(/^image\/(gif|png|jpe?g)$/)) return null;
+    const FileType = await import('file-type/browser.js');
+    const fileType = await FileType.fromBuffer(buffer);
+    if (!fileType?.mime.startsWith('image/')) {
+      return null;
+    }
 
     return new Blob([buffer], { type: fileType.mime });
   }
 
+  if (!blob.type.startsWith('image/')) {
+    return null;
+  }
+
   return blob;
+}
+
+export async function fetchImageBlob(block: ImageBlockComponent) {
+  try {
+    block.loading = true;
+    block.error = false;
+    block.blob = undefined;
+    if (block.blobUrl) {
+      URL.revokeObjectURL(block.blobUrl);
+      block.blobUrl = undefined;
+    }
+
+    const { model } = block;
+    const { id, sourceId, doc } = model;
+
+    if (isImageUploading(id)) {
+      return;
+    }
+
+    if (!sourceId) {
+      throw new Error('Image sourceId is missing!');
+    }
+
+    const blob = await doc.blob.get(sourceId);
+    if (!blob) {
+      throw new Error('Image blob is missing!');
+    }
+
+    block.loading = false;
+    block.blob = blob;
+    block.blobUrl = URL.createObjectURL(blob);
+  } catch (error) {
+    block.retryCount++;
+    console.warn(`${error}, retrying`, block.retryCount);
+
+    if (block.retryCount < MAX_RETRY_COUNT) {
+      setTimeout(() => {
+        fetchImageBlob(block).catch(console.error);
+        // 1s, 2s, 3s
+      }, 1000 * block.retryCount);
+    } else {
+      block.loading = false;
+      block.error = true;
+    }
+  }
+}
+
+export async function downloadImageBlob(block: ImageBlockComponent) {
+  const { host, downloading } = block;
+  if (downloading) {
+    toast(host, 'Download in progress...');
+    return;
+  }
+
+  block.downloading = true;
+
+  const blob = await getImageBlob(block.model);
+  if (!blob) {
+    toast(host, `Unable to download image!`);
+    return;
+  }
+
+  toast(host, `Downloading image...`);
+
+  downloadBlob(blob, 'image');
+
+  block.downloading = false;
+}
+
+export async function resetImageSize(block: ImageBlockComponent) {
+  const { blob, model } = block;
+  if (!blob) {
+    return;
+  }
+
+  const file = new File([blob], 'image.png', { type: blob.type });
+  const size = await readImageSize(file);
+  block.doc.updateBlock(model, {
+    width: size.width,
+    height: size.height,
+  });
 }
 
 function convertToString(blob: Blob): Promise<string | null> {
@@ -63,9 +206,12 @@ function convertToPng(blob: Blob): Promise<Blob | null> {
   });
 }
 
-export async function copyImage(model: ImageBlockModel) {
+export async function copyImageBlob(blockElement: ImageBlockComponent) {
+  const { host, model } = blockElement;
   let blob = await getImageBlob(model);
-  if (!blob) return;
+  if (!blob) {
+    return;
+  }
 
   try {
     // @ts-ignore
@@ -80,39 +226,19 @@ export async function copyImage(model: ImageBlockModel) {
         blob = await convertToPng(blob);
       }
 
-      if (!blob) return;
+      if (!blob) {
+        return;
+      }
 
       await navigator.clipboard.write([
         new ClipboardItem({ [blob.type]: blob }),
       ]);
     }
-    toast('Copied image to clipboard');
-  } catch (err) {
-    console.error(err);
+
+    toast(host, 'Copied image to clipboard');
+  } catch (error) {
+    console.error(error);
   }
-}
-
-export async function downloadImage(model: ImageBlockModel) {
-  const blob = await getImageBlob(model);
-  if (!blob) return;
-  downloadBlob(blob, 'image');
-}
-
-export function focusCaption(editorHost: EditorHost, model: BaseBlockModel) {
-  const blockEle = editorHost.view.viewFromPath('block', buildPath(model));
-  assertExists(blockEle);
-  const dom = blockEle.querySelector(
-    '.affine-embed-wrapper-caption'
-  ) as HTMLInputElement;
-  dom.classList.add('caption-show');
-  dom.focus();
-}
-
-async function getBlobByModel(model: ImageBlockModel) {
-  assertExists(model.sourceId);
-  const store = model.page.blob;
-  const blob = await store.get(model.sourceId);
-  return blob;
 }
 
 export function shouldResizeImage(node: Node, target: EventTarget | null) {
@@ -124,79 +250,29 @@ export function shouldResizeImage(node: Node, target: EventTarget | null) {
   );
 }
 
-export async function uploadBlobForImage(
-  page: Page,
-  blockId: string,
-  blob: Blob
-): Promise<string> {
-  const isLoading = isImageLoading(blockId);
-  if (isLoading) {
-    throw new Error('the image is already uploading!');
-  }
-  setImageLoading(blockId, true);
-  const storage = page.blob;
-  let sourceId = '';
-  let imageBlock: BaseBlockModel | null = null;
-  try {
-    imageBlock = page.getBlockById(blockId);
-    if (!imageBlock) {
-      throw new Error('the attachment model is not found!');
-    }
-    if (!(imageBlock instanceof ImageBlockModel)) {
-      console.error(imageBlock);
-      throw new Error('the model is not an image model!');
-    }
-    sourceId = await storage.set(blob);
-  } catch (error) {
-    console.error(error);
-    setImageLoading(blockId, false);
-    if (error instanceof Error) {
-      toast(
-        `Failed to upload attachment! ${error.message || error.toString()}`
-      );
-    }
-  }
-  setImageLoading(blockId, false);
-  page.withoutTransact(() => {
-    if (imageBlock) {
-      page.updateBlock(imageBlock, {
-        sourceId,
-      } satisfies Partial<ImageBlockProps>);
-    }
-  });
-  return blockId;
-}
-
-const imageLoadingMap = new Set<string>();
-export function setImageLoading(blockId: string, loading: boolean) {
-  if (loading) {
-    imageLoadingMap.add(blockId);
-  } else {
-    imageLoadingMap.delete(blockId);
-  }
-}
-
-export function isImageLoading(blockId: string) {
-  return imageLoadingMap.has(blockId);
-}
-
 export function addSiblingImageBlock(
+  editorHost: EditorHost,
   files: File[],
   maxFileSize: number,
-  targetModel: BaseBlockModel,
+  targetModel: BlockModel,
   place: 'after' | 'before' = 'after'
 ) {
   const imageFiles = files.filter(file => file.type.startsWith('image/'));
+  if (!imageFiles.length) {
+    return;
+  }
+
   const isSizeExceeded = imageFiles.some(file => file.size > maxFileSize);
   if (isSizeExceeded) {
     toast(
+      editorHost,
       `You can only upload files less than ${humanFileSize(
         maxFileSize,
         true,
         0
       )}`
     );
-    return [];
+    return;
   }
 
   const imageBlockProps: Partial<ImageBlockProps> &
@@ -207,44 +283,77 @@ export function addSiblingImageBlock(
     size: file.size,
   }));
 
-  const page = targetModel.page;
-  const blockIds = page.addSiblingBlocks(targetModel, imageBlockProps, place);
-  blockIds.map((blockId, index) =>
-    uploadBlobForImage(page, blockId, imageFiles[index])
+  const doc = editorHost.doc;
+  const blockIds = doc.addSiblingBlocks(targetModel, imageBlockProps, place);
+  blockIds.map(
+    (blockId, index) =>
+      void uploadBlobForImage(editorHost, blockId, imageFiles[index])
   );
   return blockIds;
 }
 
 export function addImageBlocks(
+  editorHost: EditorHost,
   files: File[],
   maxFileSize: number,
-  page: Page,
-  parent?: BaseBlockModel | string | null,
+  parent?: BlockModel | string | null,
   parentIndex?: number
-): string[] {
+) {
   const imageFiles = files.filter(file => file.type.startsWith('image/'));
+  if (!imageFiles.length) {
+    return;
+  }
+
   const isSizeExceeded = imageFiles.some(file => file.size > maxFileSize);
   if (isSizeExceeded) {
     toast(
+      editorHost,
       `You can only upload files less than ${humanFileSize(
         maxFileSize,
         true,
         0
       )}`
     );
-    return [];
+    return;
   }
 
-  const blockIds: string[] = imageFiles.map(file =>
-    page.addBlock(
-      'affine:image',
-      { flavour: 'affine:image', size: file.size },
-      parent,
-      parentIndex
-    )
+  const doc = editorHost.doc;
+  const blockIds = imageFiles.map(file =>
+    doc.addBlock('affine:image', { size: file.size }, parent, parentIndex)
   );
-  blockIds.map((blockId, index) =>
-    uploadBlobForImage(page, blockId, imageFiles[index])
+  blockIds.map(
+    (blockId, index) =>
+      void uploadBlobForImage(editorHost, blockId, imageFiles[index])
   );
   return blockIds;
+}
+
+/**
+ * Turn the image block into a attachment block.
+ */
+export async function turnImageIntoCardView(block: ImageBlockComponent) {
+  const doc = block.doc;
+  if (!doc.schema.flavourSchemaMap.has('affine:attachment')) {
+    throw new Error('The attachment flavour is not supported!');
+  }
+
+  const model = block.model;
+  const sourceId = model.sourceId;
+  const blob = await getImageBlob(model);
+  if (!sourceId || !blob) {
+    throw new Error('Image data not available');
+  }
+
+  const { saveImageData, getAttachmentData } = withTempBlobData();
+  saveImageData(sourceId, { width: model.width, height: model.height });
+  const attachmentConvertData = getAttachmentData(sourceId);
+  const attachmentProp: Partial<AttachmentBlockProps> = {
+    sourceId,
+    name: DEFAULT_ATTACHMENT_NAME,
+    size: blob.size,
+    type: blob.type,
+    caption: model.caption,
+    ...attachmentConvertData,
+  };
+  transformModel(model, 'affine:attachment', attachmentProp);
 }

@@ -2,28 +2,28 @@ import { assertExists } from '@blocksuite/global/utils';
 import {
   type AttributeRenderer,
   createInlineKeyDownHandler,
+  type DeltaInsert,
   InlineEditor,
   type InlineRange,
   type InlineRangeProvider,
+  type KeyboardBindingContext,
 } from '@blocksuite/inline';
 import { ShadowlessElement, WithDisposable } from '@blocksuite/lit';
 import type { Y } from '@blocksuite/store';
-import { Text, Workspace } from '@blocksuite/store';
+import { DocCollection, Text } from '@blocksuite/store';
 import { css, html } from 'lit';
 import { customElement, property, query } from 'lit/decorators.js';
 import { classMap } from 'lit/directives/class-map.js';
 import { z } from 'zod';
 
-import { onVBeforeinput, onVCompositionEnd } from './inline/hooks.js';
-import {
-  type AffineInlineEditor,
-  type AffineTextAttributes,
-} from './inline/types.js';
-import { tryFormatInlineStyle } from './markdown/inline.js';
+import type {
+  AffineInlineEditor,
+  AffineTextAttributes,
+} from '../../inline/presets/affine-inline-specs.js';
+import { onVBeforeinput, onVCompositionEnd } from './hooks.js';
 
 interface RichTextStackItem {
   meta: Map<'richtext-v-range', InlineRange | null>;
-  type: 'undo' | 'redo';
 }
 
 @customElement('rich-text')
@@ -51,7 +51,8 @@ export class RichText extends WithDisposable(ShadowlessElement) {
       scroll-margin-bottom: 30px;
     }
 
-    rich-text .nowrap-lines v-text span {
+    rich-text .nowrap-lines v-text span,
+    rich-text .nowrap-lines v-element span {
       white-space: pre !important;
     }
   `;
@@ -72,6 +73,24 @@ export class RichText extends WithDisposable(ShadowlessElement) {
   attributeRenderer?: AttributeRenderer;
 
   @property({ attribute: false })
+  inlineEventSource?: HTMLElement;
+
+  @property({ attribute: false })
+  markdownShortcutHandler?: <
+    TextAttributes extends AffineTextAttributes = AffineTextAttributes,
+  >(
+    context: KeyboardBindingContext<TextAttributes>,
+    undoManager: Y.UndoManager
+  ) => boolean;
+
+  @property({ attribute: false })
+  embedChecker: <
+    TextAttributes extends AffineTextAttributes = AffineTextAttributes,
+  >(
+    delta: DeltaInsert<TextAttributes>
+  ) => boolean = () => false;
+
+  @property({ attribute: false })
   readonly = false;
 
   @property({ attribute: false })
@@ -80,7 +99,7 @@ export class RichText extends WithDisposable(ShadowlessElement) {
   @property({ attribute: false })
   undoManager!: Y.UndoManager;
 
-  // If it is true rich-test will prevent events related to clipboard bubbling up and handle them by itself.
+  // If it is true rich-text will prevent events related to clipboard bubbling up and handle them by itself.
   @property({ attribute: false })
   enableClipboard = true;
   // If it is true rich-text will handle undo/redo by itself. (including v-range restore)
@@ -93,11 +112,8 @@ export class RichText extends WithDisposable(ShadowlessElement) {
   @property({ attribute: false })
   enableAutoScrollHorizontally = true;
   @property({ attribute: false })
-  enableMarkdownShortcut = true;
-  @property({ attribute: false })
   wrapText = true;
 
-  // `enableMarkdownShortcut` will be overwritten to false and
   // `attributesSchema` will be overwritten to `z.object({})` if `enableFormat` is false.
   @property({ attribute: false })
   enableFormat = true;
@@ -113,13 +129,12 @@ export class RichText extends WithDisposable(ShadowlessElement) {
     }
 
     if (!this.enableFormat) {
-      this.enableMarkdownShortcut = false;
       this.attributesSchema = z.object({});
     }
 
     // init inline editor
     this._inlineEditor = new InlineEditor<AffineTextAttributes>(this._yText, {
-      isEmbed: delta => !!delta.attributes?.reference,
+      isEmbed: delta => this.embedChecker(delta),
       hooks: {
         beforeinput: onVBeforeinput,
         compositionEnd: onVCompositionEnd,
@@ -134,16 +149,18 @@ export class RichText extends WithDisposable(ShadowlessElement) {
     }
     const inlineEditor = this._inlineEditor;
 
-    if (this.enableMarkdownShortcut) {
+    const markdownShortcutHandler = this.markdownShortcutHandler;
+    if (markdownShortcutHandler) {
       const keyDownHandler = createInlineKeyDownHandler(inlineEditor, {
         inputRule: {
           key: [' ', 'Enter'],
-          handler: context => tryFormatInlineStyle(context, this.undoManager),
+          handler: context =>
+            markdownShortcutHandler(context, this.undoManager),
         },
       });
 
       inlineEditor.disposables.addFromEvent(
-        this.inlineEditorContainer,
+        this.inlineEventSource ?? this.inlineEditorContainer,
         'keydown',
         keyDownHandler
       );
@@ -158,10 +175,6 @@ export class RichText extends WithDisposable(ShadowlessElement) {
           .waitForUpdate()
           .then(() => {
             if (!inlineEditor.mounted) return;
-
-            // get newest inline range
-            const inlineRange = inlineEditor.getInlineRange();
-            if (!inlineRange) return;
 
             const range = inlineEditor.toDomRange(inlineRange);
             if (!range) return;
@@ -201,7 +214,7 @@ export class RichText extends WithDisposable(ShadowlessElement) {
       })
     );
 
-    inlineEditor.mount(this.inlineEditorContainer);
+    inlineEditor.mount(this.inlineEditorContainer, this.inlineEventSource);
     inlineEditor.setReadonly(this.readonly);
   }
 
@@ -269,7 +282,9 @@ export class RichText extends WithDisposable(ShadowlessElement) {
     const inlineRange = inlineEditor.getInlineRange();
     if (!inlineRange) return;
 
-    const text = e.clipboardData?.getData('text/plain');
+    const text = e.clipboardData
+      ?.getData('text/plain')
+      ?.replace(/\r?\n|\r/g, '\n');
     if (!text) return;
 
     inlineEditor.insertText(inlineRange, text);
@@ -302,7 +317,7 @@ export class RichText extends WithDisposable(ShadowlessElement) {
     assertExists(this._yText.doc, 'yText should be bind to yDoc.');
 
     if (!this.undoManager) {
-      this.undoManager = new Workspace.Y.UndoManager(this._yText, {
+      this.undoManager = new DocCollection.Y.UndoManager(this._yText, {
         trackedOrigins: new Set([this._yText.doc.clientID]),
       });
     }
@@ -351,8 +366,8 @@ export class RichText extends WithDisposable(ShadowlessElement) {
       .catch(console.error);
   }
 
-  override updated() {
-    if (this._inlineEditor) {
+  override updated(changedProperties: Map<string | number | symbol, unknown>) {
+    if (this._inlineEditor && changedProperties.has('readonly')) {
       this._inlineEditor.setReadonly(this.readonly);
     }
   }

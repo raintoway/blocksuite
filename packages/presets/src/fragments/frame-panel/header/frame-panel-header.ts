@@ -1,12 +1,10 @@
 import './frames-setting-menu.js';
 
-import type { EdgelessPageBlockComponent } from '@blocksuite/blocks';
-import {
-  EdgelessPresentationConsts,
-  type NavigatorMode,
-} from '@blocksuite/blocks';
+import type { EdgelessRootBlockComponent } from '@blocksuite/blocks';
+import { type NavigatorMode } from '@blocksuite/blocks';
 import { createButtonPopper } from '@blocksuite/blocks';
 import { DisposableGroup } from '@blocksuite/global/utils';
+import type { EditorHost } from '@blocksuite/lit';
 import { WithDisposable } from '@blocksuite/lit';
 import { css, html, LitElement, type PropertyValues } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
@@ -105,10 +103,10 @@ export class FramePanelHeader extends WithDisposable(LitElement) {
   static override styles = styles;
 
   @property({ attribute: false })
-  edgeless!: EdgelessPageBlockComponent | null;
+  editorHost!: EditorHost;
 
   @property({ attribute: false })
-  changeEditorMode!: (mode: 'page' | 'edgeless') => void;
+  edgeless!: EdgelessRootBlockComponent | null;
 
   @state()
   private _settingPopperShow = false;
@@ -126,23 +124,32 @@ export class FramePanelHeader extends WithDisposable(LitElement) {
   private _navigatorMode: NavigatorMode = 'fit';
   private _edgelessDisposables: DisposableGroup | null = null;
 
+  get rootService() {
+    return this.editorHost.spec.getService('affine:page');
+  }
+
   private _enterPresentationMode = () => {
-    if (!this.edgeless) this.changeEditorMode('edgeless');
-    this.edgeless?.updateComplete
-      .then(() => {
-        this.edgeless?.tools.setEdgelessTool({
-          type: 'frameNavigator',
-          mode: this._navigatorMode,
-        });
-      })
-      .catch(console.error);
+    if (!this.edgeless)
+      this.rootService.slots.editorModeSwitch.emit('edgeless');
+
+    setTimeout(() => {
+      this.edgeless?.updateComplete
+        .then(() => {
+          this.edgeless?.tools.setEdgelessTool({
+            type: 'frameNavigator',
+            mode: this._navigatorMode,
+          });
+        })
+        .catch(console.error);
+    }, 100);
   };
 
   private _tryLoadNavigatorStateLocalRecord() {
-    this._navigatorMode =
-      sessionStorage.getItem(EdgelessPresentationConsts.FillScreen) === 'true'
-        ? 'fill'
-        : 'fit';
+    this._navigatorMode = this.editorHost.spec
+      .getService('affine:page')
+      .editSession.getItem('presentFillScreen')
+      ? 'fill'
+      : 'fit';
   }
 
   private _clearEdgelessDisposables = () => {
@@ -177,7 +184,7 @@ export class FramePanelHeader extends WithDisposable(LitElement) {
         this._settingPopperShow = display === 'show';
       },
       14,
-      -120
+      -100
     );
     disposables.add(this._framesSettingMenuPopper);
   }
@@ -218,7 +225,10 @@ export class FramePanelHeader extends WithDisposable(LitElement) {
         </edgeless-tool-icon-button>
       </div>
       <div class="frames-setting-container">
-        <frames-setting-menu .edgeless=${this.edgeless}></frames-setting-menu>
+        <frames-setting-menu
+          .edgeless=${this.edgeless}
+          .editorHost=${this.editorHost}
+        ></frames-setting-menu>
       </div>
       <div class="presentation-button" @click=${this._enterPresentationMode}>
         ${SmallFrameNavigatorIcon}<span class="presentation-button-label"

@@ -1,6 +1,10 @@
-import { ShadowlessElement, WithDisposable } from '@blocksuite/lit';
-import type { BaseBlockModel } from '@blocksuite/store';
-import { type TemplateResult } from 'lit';
+import {
+  RangeManager,
+  ShadowlessElement,
+  WithDisposable,
+} from '@blocksuite/lit';
+import type { BlockModel } from '@blocksuite/store';
+import { css, nothing, type TemplateResult } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { styleMap } from 'lit/directives/style-map.js';
 import { html } from 'lit/static-html.js';
@@ -10,11 +14,18 @@ import {
   EDGELESS_BLOCK_CHILD_PADDING,
 } from '../../_common/consts.js';
 import { DEFAULT_NOTE_COLOR } from '../../_common/edgeless/note/consts.js';
+import { NoteDisplayMode } from '../../_common/types.js';
 import { type NoteBlockModel } from '../../note-block/index.js';
 import { deserializeXYWH } from '../../surface-block/index.js';
 
 @customElement('surface-ref-note-portal')
 export class SurfaceRefNotePortal extends WithDisposable(ShadowlessElement) {
+  static override styles = css`
+    surface-ref-note-portal {
+      position: relative;
+    }
+  `;
+
   @property({ attribute: false })
   index!: number;
 
@@ -22,7 +33,7 @@ export class SurfaceRefNotePortal extends WithDisposable(ShadowlessElement) {
   model!: NoteBlockModel;
 
   @property({ attribute: false })
-  renderModel!: (model: BaseBlockModel) => TemplateResult;
+  renderModel!: (model: BlockModel) => TemplateResult;
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -49,29 +60,28 @@ export class SurfaceRefNotePortal extends WithDisposable(ShadowlessElement) {
       });
 
       blockElements.forEach(element => {
-        element.setAttribute('data-queryable', 'false');
+        element.setAttribute(RangeManager.rangeQueryExcludeAttr, 'true');
       });
     }, 500);
   }
 
   override render() {
     const { model, index } = this;
+    const { displayMode } = model;
+    if (!!displayMode && displayMode === NoteDisplayMode.DocOnly)
+      return nothing;
+
     const { xywh, background } = model;
     const [modelX, modelY, modelW, modelH] = deserializeXYWH(xywh);
-    const isHiddenNote = model.hidden;
     const style = {
       zIndex: `${index}`,
       width: modelW + 'px',
       height: modelH + 'px',
       transform: `translate(${modelX}px, ${modelY}px)`,
       padding: `${EDGELESS_BLOCK_CHILD_PADDING}px`,
-      border: `${EDGELESS_BLOCK_CHILD_BORDER_WIDTH}px ${
-        isHiddenNote ? 'dashed' : 'solid'
-      } var(--affine-black-10)`,
-      background: isHiddenNote
-        ? 'transparent'
-        : `var(${background ?? DEFAULT_NOTE_COLOR})`,
-      boxShadow: isHiddenNote ? undefined : 'var(--affine-shadow-3)',
+      border: `${EDGELESS_BLOCK_CHILD_BORDER_WIDTH}px ${'solid'} var(--affine-black-10)`,
+      background: `var(${background ?? DEFAULT_NOTE_COLOR})`,
+      boxShadow: 'var(--affine-shadow-3)',
       position: 'absolute',
       borderRadius: '8px',
       boxSizing: 'border-box',
@@ -86,6 +96,7 @@ export class SurfaceRefNotePortal extends WithDisposable(ShadowlessElement) {
         class="surface-ref-note-portal"
         style=${styleMap(style)}
         data-model-height="${modelH}"
+        data-portal-reference-block-id="${model.id}"
       >
         ${this.renderModel(model)}
       </div>

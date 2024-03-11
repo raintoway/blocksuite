@@ -1,5 +1,4 @@
 import { expect } from '@playwright/test';
-import { getFormatBar } from 'utils/query.js';
 
 import {
   dragBetweenCoords,
@@ -10,7 +9,6 @@ import {
   initDatabaseRow,
   initDatabaseRowWithData,
   initEmptyDatabaseState,
-  pressArrowDown,
   pressArrowLeft,
   pressArrowRight,
   pressBackspace,
@@ -31,6 +29,7 @@ import {
   assertRowCount,
 } from '../utils/asserts.js';
 import { test } from '../utils/playwright.js';
+import { getFormatBar } from '../utils/query.js';
 import {
   assertColumnWidth,
   assertDatabaseCellRichTexts,
@@ -62,7 +61,6 @@ test('edit database block title and create new rows', async ({ page }) => {
     title: dbTitle,
   });
   await focusDatabaseTitle(page);
-  await pressArrowDown(page);
   for (let i = 0; i < dbTitle.length; i++) {
     await pressBackspace(page);
   }
@@ -262,7 +260,7 @@ test('should database title and rich-text support undo/redo', async ({
   await focusDatabaseTitle(page);
   await type(page, 'abc');
   await assertDatabaseTitleText(page, 'Database 1abc');
-  await undoByClick(page);
+  await undoByKeyboard(page);
   await assertDatabaseTitleText(page, 'Database 1');
   await redoByKeyboard(page);
   await assertDatabaseTitleText(page, 'Database 1abc');

@@ -10,7 +10,10 @@ import {
   MoreHorizontalIcon,
   NewEditIcon,
 } from '../../../_common/icons/index.js';
-import type { TableViewSelection } from '../../../_common/utils/index.js';
+import {
+  getRootByElement,
+  type TableViewSelection,
+} from '../../../_common/utils/index.js';
 import { DEFAULT_COLUMN_MIN_WIDTH } from '../consts.js';
 import type { DataViewTableManager } from '../table-view-manager.js';
 import { openDetail, popRowMenu } from './menu.js';
@@ -132,7 +135,8 @@ export class TableRow extends WithDisposable(ShadowlessElement) {
       },
       isEditing: false,
     };
-    popRowMenu(positionToVRect(e.x, e.y), this.rowId, selection);
+    const rootElement = getRootByElement(this);
+    popRowMenu(rootElement, positionToVRect(e.x, e.y), this.rowId, selection);
   };
 
   public override connectedCallback() {
@@ -182,8 +186,7 @@ export class TableRow extends WithDisposable(ShadowlessElement) {
             style="width: 4px;
             border-radius: 2px;
             height: 12px;
-            background-color: var(--affine-placeholder-color);
-"
+            background-color: var(--affine-placeholder-color);"
           ></div>
         </div>
       </div>
@@ -206,7 +209,8 @@ export class TableRow extends WithDisposable(ShadowlessElement) {
               },
               isEditing: false,
             });
-            openDetail(this.rowId, this.selectionController);
+            const rootElement = getRootByElement(this);
+            openDetail(rootElement, this.rowId, this.selectionController);
           };
           const openMenu = (e: MouseEvent) => {
             if (!this.selectionController) {
@@ -224,7 +228,8 @@ export class TableRow extends WithDisposable(ShadowlessElement) {
               },
               isEditing: false,
             });
-            popRowMenu(ele, this.rowId, this.selectionController);
+            const rootElement = getRootByElement(this);
+            popRowMenu(rootElement, ele, this.rowId, this.selectionController);
           };
           return html`
             <div>

@@ -3,9 +3,9 @@ import { type DeltaInsert, ZERO_WIDTH_SPACE } from '@blocksuite/inline';
 import { ShadowlessElement } from '@blocksuite/lit';
 import { html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
-import type { IThemedToken } from 'shiki';
+import type { ThemedToken } from 'shiki';
 
-import type { AffineTextAttributes } from '../_common/components/rich-text/inline/types.js';
+import type { AffineTextAttributes } from '../_common/inline/presets/affine-inline-specs.js';
 import { getThemeMode } from '../_common/utils/query.js';
 import type { HighlightOptionsGetter } from './code-model.js';
 import { DARK_THEME, LIGHT_THEME } from './utils/consts.js';
@@ -22,7 +22,7 @@ export class AffineCodeLine extends ShadowlessElement {
   };
 
   @property({ attribute: false })
-  highlightOptionsGetter: HighlightOptionsGetter = null;
+  highlightOptionsGetter: HighlightOptionsGetter | null = null;
 
   override render() {
     assertExists(
@@ -37,6 +37,7 @@ export class AffineCodeLine extends ShadowlessElement {
           .str=${this.delta.insert}
           .styles=${{
             'word-wrap': 'break-word',
+            'white-space': 'break-spaces',
           }}
         ></v-text
       ></span>`;
@@ -46,7 +47,7 @@ export class AffineCodeLine extends ShadowlessElement {
     const cacheKey: highlightCacheKey = `${this.delta.insert}-${lang}-${mode}`;
     const cache = highlightCache.get(cacheKey);
 
-    let tokens: IThemedToken[] = [
+    let tokens: Omit<ThemedToken, 'offset'>[] = [
       {
         content: this.delta.insert,
       },
@@ -54,11 +55,10 @@ export class AffineCodeLine extends ShadowlessElement {
     if (cache) {
       tokens = cache;
     } else {
-      tokens = highlighter.codeToThemedTokens(
-        this.delta.insert,
+      tokens = highlighter.codeToTokensBase(this.delta.insert, {
         lang,
-        mode === 'dark' ? DARK_THEME : LIGHT_THEME
-      )[0];
+        theme: mode === 'dark' ? DARK_THEME : LIGHT_THEME,
+      })[0];
       highlightCache.set(cacheKey, tokens);
     }
 
@@ -67,6 +67,7 @@ export class AffineCodeLine extends ShadowlessElement {
         .str=${token.content}
         .styles=${{
           'word-wrap': 'break-word',
+          'white-space': 'break-spaces',
           color: token.color,
         }}
       ></v-text>`;

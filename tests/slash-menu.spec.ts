@@ -307,7 +307,7 @@ test('should slash menu works with fast type', async ({ page }) => {
   await initEmptyParagraphState(page);
   await focusRichText(page);
 
-  await type(page, 'a/text', 10);
+  await type(page, 'a/text', 0);
   const slashMenu = page.locator(`.slash-menu`);
   await expect(slashMenu).toBeVisible();
 });
@@ -357,6 +357,7 @@ test.describe('slash search', () => {
       `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {
@@ -415,6 +416,8 @@ test.describe('slash search', () => {
     await expect(slashItems).toHaveText([
       'Code Block',
       'Italic',
+      'New Doc',
+      'Link Doc',
       'File',
       'Copy',
       'Duplicate',
@@ -637,6 +640,7 @@ test.skip('should compatible CJK IME', async ({ page }) => {
 test.describe('slash menu with customize menu', () => {
   test('can remove specified menus', async ({ page }) => {
     await enterPlaygroundRoom(page);
+    await initEmptyParagraphState(page);
     await page.evaluate(async () => {
       // https://github.com/lit/lit/blob/84df6ef8c73fffec92384891b4b031d7efc01a64/packages/lit-html/src/static.ts#L93
       const fakeLiteral = (strings: TemplateStringsArray) =>
@@ -659,17 +663,16 @@ test.describe('slash menu with customize menu', () => {
       // see https://stackoverflow.com/questions/41521812/illegal-constructor-with-ecmascript-6
       customElements.define('affine-custom-slash-menu', CustomSlashMenu);
 
-      const docSpecs = window.$blocksuite.blocks.DocEditorBlockSpecs;
-      const pageBlockSpec = docSpecs.shift();
-      if (!pageBlockSpec) throw new Error("Can't find pageBlockSpec");
+      const pageSpecs = window.$blocksuite.blocks.PageEditorBlockSpecs;
+      const rootBlockSpec = pageSpecs.shift();
+      if (!rootBlockSpec) throw new Error("Can't find rootBlockSpec");
       // @ts-ignore
-      pageBlockSpec.view.widgets['affine-slash-menu-widget'] =
+      rootBlockSpec.view.widgets['affine-slash-menu-widget'] =
         fakeLiteral`affine-custom-slash-menu`;
-      docSpecs.unshift(pageBlockSpec);
-      editor.docSpecs = docSpecs;
+      editor.pageSpecs = [rootBlockSpec, ...pageSpecs];
+      await editor.updateComplete;
     });
 
-    await initEmptyParagraphState(page);
     await focusRichText(page);
 
     const slashMenu = page.locator(`.slash-menu`);
@@ -682,7 +685,7 @@ test.describe('slash menu with customize menu', () => {
 
   test('can add some menus', async ({ page }) => {
     await enterPlaygroundRoom(page);
-
+    await initEmptyParagraphState(page);
     await page.evaluate(async () => {
       // https://github.com/lit/lit/blob/84df6ef8c73fffec92384891b4b031d7efc01a64/packages/lit-html/src/static.ts#L93
       const fakeLiteral = (strings: TemplateStringsArray) =>
@@ -720,17 +723,16 @@ test.describe('slash menu with customize menu', () => {
       // see https://stackoverflow.com/questions/41521812/illegal-constructor-with-ecmascript-6
       customElements.define('affine-custom-slash-menu', CustomSlashMenu);
 
-      const docSpecs = window.$blocksuite.blocks.DocEditorBlockSpecs;
-      const pageBlockSpec = docSpecs.shift();
-      if (!pageBlockSpec) throw new Error("Can't find pageBlockSpec");
+      const pageSpecs = window.$blocksuite.blocks.PageEditorBlockSpecs;
+      const rootBlockSpec = pageSpecs.shift();
+      if (!rootBlockSpec) throw new Error("Can't find rootBlockSpec");
       // @ts-ignore
-      pageBlockSpec.view.widgets['affine-slash-menu-widget'] =
+      rootBlockSpec.view.widgets['affine-slash-menu-widget'] =
         fakeLiteral`affine-custom-slash-menu`;
-      docSpecs.unshift(pageBlockSpec);
-      editor.docSpecs = docSpecs;
+      editor.pageSpecs = [rootBlockSpec, ...pageSpecs];
+      await editor.updateComplete;
     });
 
-    await initEmptyParagraphState(page);
     await focusRichText(page);
 
     const slashMenu = page.locator(`.slash-menu`);
@@ -787,6 +789,7 @@ test('delete block by slash menu should remove children', async ({ page }) => {
     `
 <affine:note
   prop:background="--affine-background-secondary-color"
+  prop:displayMode="both"
   prop:edgeless={
     Object {
       "style": Object {

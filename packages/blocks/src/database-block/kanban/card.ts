@@ -9,6 +9,7 @@ import { html } from 'lit/static-html.js';
 
 import { positionToVRect } from '../../_common/components/menu/index.js';
 import { MoreHorizontalIcon, NewEditIcon } from '../../_common/icons/index.js';
+import { getRootByElement } from '../../_common/utils/query.js';
 import { popSideDetail } from '../common/detail/layout.js';
 import type {
   DataViewKanbanColumnManager,
@@ -156,7 +157,9 @@ export class KanbanCard extends WithDisposable(ShadowlessElement) {
       if (selection) {
         selection.selection = undefined;
       }
+      const rootElement = getRootByElement(this);
       popSideDetail({
+        rootElement,
         view: this.view,
         rowId: this.cardId,
         onClose: () => {
@@ -263,8 +266,9 @@ export class KanbanCard extends WithDisposable(ShadowlessElement) {
   private clickEdit = (e: MouseEvent) => {
     e.stopPropagation();
     const selection = this.getSelection();
+    const rootElement = getRootByElement(this);
     if (selection) {
-      openDetail(this.cardId, selection);
+      openDetail(rootElement, this.cardId, selection);
     }
   };
 
@@ -286,7 +290,8 @@ export class KanbanCard extends WithDisposable(ShadowlessElement) {
           },
         ],
       };
-      popCardMenu(ele, this.cardId, selection);
+      const rootElement = getRootByElement(this);
+      popCardMenu(rootElement, ele, this.cardId, selection);
     }
   };
   private contextMenu = (e: MouseEvent) => {
@@ -303,7 +308,13 @@ export class KanbanCard extends WithDisposable(ShadowlessElement) {
           },
         ],
       };
-      popCardMenu(positionToVRect(e.x, e.y), this.cardId, selection);
+      const rootElement = getRootByElement(this);
+      popCardMenu(
+        rootElement,
+        positionToVRect(e.x, e.y),
+        this.cardId,
+        selection
+      );
     }
   };
 }

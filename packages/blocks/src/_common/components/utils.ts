@@ -1,15 +1,17 @@
 import { assertExists, sleep } from '@blocksuite/global/utils';
-import { BaseBlockModel } from '@blocksuite/store';
+import type { InlineEditor } from '@blocksuite/inline';
+import type { EditorHost } from '@blocksuite/lit';
+import { BlockModel } from '@blocksuite/store';
 import { css, unsafeCSS } from 'lit';
 
 import { isControlledKeyboardEvent } from '../../_common/utils/event.js';
 import { getInlineEditorByModel } from '../../_common/utils/query.js';
 import { getCurrentNativeRange } from '../../_common/utils/selection.js';
-import type { AffineInlineEditor } from './rich-text/inline/types.js';
-import type { RichText } from './rich-text/rich-text.js';
+import type { AffineInlineEditor } from '../inline/presets/affine-inline-specs.js';
 
 export const createKeydownObserver = ({
   target,
+  inlineEditor,
   onUpdateQuery,
   onMove,
   onConfirm,
@@ -17,7 +19,8 @@ export const createKeydownObserver = ({
   interceptor = (_, next) => next(),
   abortController,
 }: {
-  target: RichText;
+  target: HTMLElement;
+  inlineEditor: InlineEditor;
   onUpdateQuery: (val: string) => void;
   onMove: (step: 1 | -1) => void;
   onConfirm: () => void;
@@ -26,11 +29,6 @@ export const createKeydownObserver = ({
   abortController: AbortController;
 }) => {
   let query = '';
-  const inlineEditor = target.inlineEditor;
-  assertExists(
-    inlineEditor,
-    'Failed to observer keyboard! Inline editor does not exist.'
-  );
   const startIndex = inlineEditor?.getInlineRange()?.index ?? 0;
 
   const updateQuery = async () => {
@@ -209,7 +207,8 @@ export const createKeydownObserver = ({
  * Remove specified text from the current range.
  */
 export function cleanSpecifiedTail(
-  inlineEditorOrModel: AffineInlineEditor | BaseBlockModel,
+  editorHost: EditorHost,
+  inlineEditorOrModel: AffineInlineEditor | BlockModel,
   str: string
 ) {
   if (!str) {
@@ -217,8 +216,8 @@ export function cleanSpecifiedTail(
     return;
   }
   const inlineEditor =
-    inlineEditorOrModel instanceof BaseBlockModel
-      ? getInlineEditorByModel(inlineEditorOrModel)
+    inlineEditorOrModel instanceof BlockModel
+      ? getInlineEditorByModel(editorHost, inlineEditorOrModel)
       : inlineEditorOrModel;
   assertExists(inlineEditor, 'Inline editor not found');
 
@@ -240,12 +239,12 @@ export function cleanSpecifiedTail(
 }
 
 /**
- * You should add a container before the scrollbar style to prevent the style pollution of the whole page.
+ * You should add a container before the scrollbar style to prevent the style pollution of the whole doc.
  */
 export const scrollbarStyle = (container: string) => {
   if (!container)
     throw new Error(
-      'To prevent style pollution of the whole page, you must add a container before the scrollbar style.'
+      'To prevent style pollution of the whole doc, you must add a container before the scrollbar style.'
     );
 
   // sanitize container name

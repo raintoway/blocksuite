@@ -1,30 +1,49 @@
 /// <reference types="vite/client" />
 import '../_common/components/rich-text/rich-text.js';
+import '../_common/components/block-selection.js';
 
 import { assertExists } from '@blocksuite/global/utils';
 import type { InlineRangeProvider } from '@blocksuite/inline';
 import { BlockElement, getInlineRangeProvider } from '@blocksuite/lit';
 import { html, nothing, type TemplateResult } from 'lit';
 import { customElement, query, state } from 'lit/decorators.js';
-import { when } from 'lit/directives/when.js';
 
-import { affineAttributeRenderer } from '../_common/components/rich-text/inline/attribute-renderer.js';
-import { affineTextAttributes } from '../_common/components/rich-text/inline/types.js';
 import { bindContainerHotkey } from '../_common/components/rich-text/keymap/index.js';
 import type { RichText } from '../_common/components/rich-text/rich-text.js';
 import { BLOCK_CHILDREN_CONTAINER_PADDING_LEFT } from '../_common/consts.js';
+import type { NoteBlockComponent } from '../note-block/note-block.js';
+import { EdgelessRootBlockComponent } from '../root-block/edgeless/edgeless-root-block.js';
 import type { ListBlockModel } from './list-model.js';
+import type { ListService } from './list-service.js';
 import { styles } from './styles.js';
 import { ListIcon } from './utils/get-list-icon.js';
 import { getListInfo } from './utils/get-list-info.js';
 import { playCheckAnimation, toggleDown, toggleRight } from './utils/icons.js';
 
 @customElement('affine-list')
-export class ListBlockComponent extends BlockElement<ListBlockModel> {
+export class ListBlockComponent extends BlockElement<
+  ListBlockModel,
+  ListService
+> {
   static override styles = styles;
 
-  readonly attributesSchema = affineTextAttributes;
-  readonly attributeRenderer = affineAttributeRenderer;
+  get inlineManager() {
+    const inlineManager = this.service?.inlineManager;
+    assertExists(inlineManager);
+    return inlineManager;
+  }
+  get attributesSchema() {
+    return this.inlineManager.getSchema();
+  }
+  get attributeRenderer() {
+    return this.inlineManager.getRenderer();
+  }
+  get markdownShortcutHandler() {
+    return this.inlineManager.markdownShortcutHandler;
+  }
+  get embedChecker() {
+    return this.inlineManager.embedChecker;
+  }
 
   @state()
   private _isCollapsedWhenReadOnly = !!this.model?.collapsed;
@@ -34,7 +53,7 @@ export class ListBlockComponent extends BlockElement<ListBlockModel> {
     selection.update(selList => {
       return selList
         .filter(sel => !sel.is('text') && !sel.is('block'))
-        .concat(selection.getInstance('block', { path: this.path }));
+        .concat(selection.create('block', { path: this.path }));
     });
   }
 
@@ -45,9 +64,9 @@ export class ListBlockComponent extends BlockElement<ListBlockModel> {
       this._toggleChildren();
       return;
     } else if (this.model.type === 'todo') {
-      this.model.page.captureSync();
+      this.doc.captureSync();
       const checkedPropObj = { checked: !this.model.checked };
-      this.model.page.updateBlock(this.model, checkedPropObj);
+      this.doc.updateBlock(this.model, checkedPropObj);
       if (this.model.checked) {
         const checkEl = this.querySelector('.affine-list-block__todo-prefix');
         assertExists(checkEl);
@@ -62,6 +81,14 @@ export class ListBlockComponent extends BlockElement<ListBlockModel> {
   private _richTextElement?: RichText;
 
   private _inlineRangeProvider: InlineRangeProvider | null = null;
+
+  override get topContenteditableElement() {
+    if (this.rootElement instanceof EdgelessRootBlockComponent) {
+      const note = this.closest<NoteBlockComponent>('affine-note');
+      return note;
+    }
+    return this.rootElement;
+  }
 
   override async getUpdateComplete() {
     const result = await super.getUpdateComplete();
@@ -92,20 +119,21 @@ export class ListBlockComponent extends BlockElement<ListBlockModel> {
 
   override connectedCallback() {
     super.connectedCallback();
+
     bindContainerHotkey(this);
 
     this._inlineRangeProvider = getInlineRangeProvider(this);
   }
 
   private _toggleChildren() {
-    if (this.page.readonly) {
+    if (this.doc.readonly) {
       this._isCollapsedWhenReadOnly = !this._isCollapsedWhenReadOnly;
       return;
     }
     const newCollapsedState = !this.model.collapsed;
     this._isCollapsedWhenReadOnly = newCollapsedState;
-    this.page.captureSync();
-    this.page.updateBlock(this.model, {
+    this.doc.captureSync();
+    this.doc.updateBlock(this.model, {
       collapsed: newCollapsedState,
     } as Partial<ListBlockModel>);
   }
@@ -115,6 +143,7 @@ export class ListBlockComponent extends BlockElement<ListBlockModel> {
     if (noChildren) return nothing;
 
     const toggleDownTemplate = html`<div
+      contenteditable="false"
       class="toggle-icon"
       @click=${this._toggleChildren}
     >
@@ -122,6 +151,7 @@ export class ListBlockComponent extends BlockElement<ListBlockModel> {
     </div>`;
 
     const toggleRightTemplate = html`<div
+      contenteditable="false"
       class="toggle-icon toggle-icon__collapsed"
       @click=${this._toggleChildren}
     >
@@ -131,13 +161,13 @@ export class ListBlockComponent extends BlockElement<ListBlockModel> {
     return isCollapsed ? toggleRightTemplate : toggleDownTemplate;
   }
 
-  override render(): TemplateResult<1> {
+  override renderBlock(): TemplateResult<1> {
     const { deep, index } = getListInfo(this.model);
     const { model, _onClickIcon } = this;
-    const collapsed = this.page.readonly
+    const collapsed = this.doc.readonly
       ? this._isCollapsedWhenReadOnly
       : !!model.collapsed;
-    const listIcon = ListIcon(model, index, deep, !collapsed, _onClickIcon);
+    const listIcon = ListIcon(model, !collapsed, _onClickIcon);
 
     // For the first list item, we need to add a margin-top to make it align with the text
     const shouldAddMarginTop = index === 0 && deep === 0;
@@ -151,7 +181,7 @@ export class ListBlockComponent extends BlockElement<ListBlockModel> {
       class="affine-block-children-container"
       style="padding-left: ${BLOCK_CHILDREN_CONTAINER_PADDING_LEFT}px"
     >
-      ${this.renderModelChildren(this.model)}
+      ${this.renderChildren(this.model)}
     </div>`;
 
     return html`
@@ -160,20 +190,22 @@ export class ListBlockComponent extends BlockElement<ListBlockModel> {
           ${this._toggleTemplate(collapsed)} ${listIcon}
           <rich-text
             .yText=${this.model.text.yText}
-            .undoManager=${this.model.page.history}
+            .inlineEventSource=${this.topContenteditableElement ?? nothing}
+            .undoManager=${this.doc.history}
             .attributeRenderer=${this.attributeRenderer}
             .attributesSchema=${this.attributesSchema}
-            .readonly=${this.model.page.readonly}
+            .markdownShortcutHandler=${this.markdownShortcutHandler}
+            .embedChecker=${this.embedChecker}
+            .readonly=${this.doc.readonly}
             .inlineRangeProvider=${this._inlineRangeProvider}
             .enableClipboard=${false}
             .enableUndoRedo=${false}
           ></rich-text>
         </div>
+
         ${collapsed ? nothing : children}
-        ${when(
-          this.selected?.is('block'),
-          () => html`<affine-block-selection></affine-block-selection>`
-        )}
+
+        <affine-block-selection .block=${this}></affine-block-selection>
       </div>
     `;
   }
