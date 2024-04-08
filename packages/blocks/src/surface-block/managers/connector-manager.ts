@@ -1158,7 +1158,7 @@ export class ConnectorPathGenerator {
             id
           )! as ConnectorLabelElementModel;
           const [x, y] = connector.getPointByTime(label.time, bound);
-          const bounds = Bound.fromXYWH(label.deserializedXYWH);
+          const bounds = Bound.deserialize(label.xywh);
           bounds.x = x - bounds.w / 2;
           bounds.y = y - bounds.h / 2;
           connector.surface.updateElement(id, {
