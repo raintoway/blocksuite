@@ -76,7 +76,9 @@ function actionToStream<T extends keyof BlockSuitePresets.AIActions>(
   };
 }
 
-function actionToGenerateAnswer<T extends keyof BlockSuitePresets.AIActions>(
+export function actionToGenerateAnswer<
+  T extends keyof BlockSuitePresets.AIActions,
+>(
   id: T,
   variants?: Omit<
     Parameters<BlockSuitePresets.AIActions[T]>[0],

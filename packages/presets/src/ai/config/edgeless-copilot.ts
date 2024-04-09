@@ -13,15 +13,19 @@ import {
   AFFINE_EDGELESS_COPILOT_WIDGET,
   AffineAIPanelWidget,
   AIPenIcon,
-  ChatWithAIIcon,
   ImageBlockModel,
   InsertBelowIcon,
-  MakeItRealIcon,
-  NoteBlockModel,
+  LanguageIcon,
   TextElementModel,
 } from '@blocksuite/blocks';
 import { assertExists, assertType } from '@blocksuite/global/utils';
 
+import {
+  actionToHandler,
+  mindmapShowWhen,
+  noteBlockShowWen,
+} from '../actions/edgeless-handler.js';
+import { translateLangs } from '../actions/text.js';
 import { createMindmapRenderer } from '../messages/mindmap.js';
 
 function showWhen(
@@ -48,46 +52,7 @@ function getSelectedElements(service: EdgelessRootService) {
     .selectedElements;
 }
 
-const createMediaPost: AIItemConfig = {
-  name: 'Create a social media post',
-  icon: AIPenIcon,
-  showWhen: (_, editorMode, host) => {
-    return (
-      editorMode === 'edgeless' &&
-      showWhen(host, service => {
-        const selected = getSelectedElements(service);
-
-        return (
-          selected[0] instanceof ImageBlockModel ||
-          selected[0] instanceof NoteBlockModel ||
-          selected[0] instanceof TextElementModel
-        );
-      })
-    );
-  },
-};
-
-const createImage: AIItemConfig = {
-  name: 'Create an image',
-  icon: AIPenIcon,
-  showWhen: (_, editorMode, host: EditorHost) => {
-    return (
-      editorMode === 'edgeless' &&
-      showWhen(host, service => {
-        const selected = getSelectedElements(service);
-
-        return (
-          selected.length === 0 ||
-          selected[0] instanceof ImageBlockModel ||
-          selected[0] instanceof NoteBlockModel ||
-          selected[0] instanceof TextElementModel
-        );
-      })
-    );
-  },
-};
-
-const createMindmap: AIItemConfig = {
+const _createMindmap: AIItemConfig = {
   name: 'Create a mindmap',
   icon: AIPenIcon,
   showWhen: (_, editorMode, host: EditorHost) => {
@@ -168,150 +133,171 @@ const createMindmap: AIItemConfig = {
     };
 
     aiPanel.toggle(
-      (copilotPanel as EdgelessCopilotWidget)['_selectionRectEl'],
+      (copilotPanel as EdgelessCopilotWidget).selectionElem,
       `Use the nested unordered list syntax without other extra text style in Markdown to create a structure similar to a mind map without any unnecessary plain text description.
     Analyze the following questions or topics: "${(selectedElement as TextElementModel).text.toString()}"`
     );
   },
 };
 
-const createPresentation: AIItemConfig = {
-  name: 'Create a presentation',
-  icon: AIPenIcon,
-  showWhen: (_, editorMode, host: EditorHost) => {
-    return (
-      editorMode === 'edgeless' &&
-      showWhen(host, service => {
-        const selected = getSelectedElements(service);
+const translateSubItem = translateLangs.map(lang => {
+  return {
+    type: lang,
+    handler: actionToHandler('translate', { lang }),
+  };
+});
 
-        return (
-          selected.length === 0 ||
-          selected[0] instanceof NoteBlockModel ||
-          selected[0] instanceof TextElementModel
-        );
-      })
-    );
-  },
-};
-
-const createOutline: AIItemConfig = {
-  name: 'Create an outline',
-  icon: AIPenIcon,
-  showWhen: (_, editorMode, host: EditorHost) => {
-    return (
-      editorMode === 'edgeless' &&
-      showWhen(host, service => {
-        const selected = getSelectedElements(service);
-
-        return (
-          selected[0] instanceof NoteBlockModel ||
-          selected[0] instanceof TextElementModel
-        );
-      })
-    );
-  },
-};
-
-const createStory: AIItemConfig = {
-  name: 'Create creative story',
-  icon: AIPenIcon,
-  showWhen: (_, editorMode, host: EditorHost) => {
-    return (
-      editorMode === 'edgeless' &&
-      showWhen(host, service => {
-        const selected = getSelectedElements(service);
-
-        return (
-          selected[0] instanceof NoteBlockModel ||
-          selected[0] instanceof TextElementModel
-        );
-      })
-    );
-  },
-};
-
-const createEssay: AIItemConfig = {
-  name: 'Create an essay',
-  icon: AIPenIcon,
-  showWhen: (_, editorMode, host: EditorHost) => {
-    return (
-      editorMode === 'edgeless' &&
-      showWhen(host, service => {
-        const selected = getSelectedElements(service);
-
-        return (
-          selected[0] instanceof NoteBlockModel ||
-          selected[0] instanceof TextElementModel
-        );
-      })
-    );
-  },
-};
-
-const createSummary: AIItemConfig = {
-  name: 'Create a summary from this doc',
-  icon: AIPenIcon,
-  showWhen: (_, editorMode, host: EditorHost) => {
-    return (
-      editorMode === 'edgeless' &&
-      showWhen(host, service => {
-        const selected = getSelectedElements(service);
-
-        return (
-          selected[0] instanceof NoteBlockModel ||
-          selected[0] instanceof TextElementModel
-        );
-      })
-    );
-  },
-};
-
-const createTitle: AIItemConfig = {
-  name: 'Create a title for this doc',
-  icon: AIPenIcon,
-  showWhen: (_, editorMode, host: EditorHost) => {
-    return (
-      editorMode === 'edgeless' &&
-      showWhen(host, service => {
-        const selected = getSelectedElements(service);
-
-        return (
-          selected[0] instanceof NoteBlockModel ||
-          selected[0] instanceof TextElementModel
-        );
-      })
-    );
-  },
-};
-
-export const draftWithAI = {
-  name: 'draft with ai',
+export const docGroup: AIItemGroupConfig = {
+  name: 'doc',
   items: [
-    createMediaPost,
-    createImage,
-    createMindmap,
-    createPresentation,
-    createOutline,
-    createStory,
-    createEssay,
-    createSummary,
-    createTitle,
+    {
+      name: 'Summary',
+      icon: AIPenIcon,
+      showWhen: noteBlockShowWen,
+      handler: actionToHandler('summary'),
+    },
   ],
-} as AIItemGroupConfig;
-
-const chatWithAI: AIItemConfig = {
-  name: 'Chat with ai',
-  icon: ChatWithAIIcon,
-  showWhen: () => true,
 };
 
-const makeItReal: AIItemConfig = {
-  name: 'Make it real',
-  icon: MakeItRealIcon,
-  showWhen: () => true,
+export const othersGroup: AIItemGroupConfig = {
+  name: 'others',
+  items: [
+    {
+      name: 'Find actions from it',
+      icon: AIPenIcon,
+      showWhen: noteBlockShowWen,
+      handler: actionToHandler('findActions'),
+    },
+    {
+      name: 'Explain this',
+      icon: AIPenIcon,
+      showWhen: noteBlockShowWen,
+      handler: actionToHandler('explain'),
+    },
+  ],
 };
 
-export const actionWithAI = {
-  name: 'action',
-  items: [chatWithAI, makeItReal],
+export const editGroup: AIItemGroupConfig = {
+  name: 'edit',
+  items: [
+    {
+      name: 'Translate to',
+      icon: LanguageIcon,
+      showWhen: noteBlockShowWen,
+      subItem: translateSubItem,
+    },
+    {
+      name: 'Improve writing for it',
+      icon: AIPenIcon,
+      showWhen: noteBlockShowWen,
+      handler: actionToHandler('improveWriting'),
+    },
+    {
+      name: 'Improve grammar for it',
+      icon: AIPenIcon,
+      showWhen: noteBlockShowWen,
+      handler: actionToHandler('improveGrammar'),
+    },
+    {
+      name: 'Fix spelling ',
+      icon: AIPenIcon,
+      showWhen: noteBlockShowWen,
+      handler: actionToHandler('fixSpelling'),
+    },
+    {
+      name: 'Make longer',
+      icon: AIPenIcon,
+      showWhen: noteBlockShowWen,
+      handler: actionToHandler('makeLonger'),
+    },
+    {
+      name: 'Make shorter',
+      icon: AIPenIcon,
+      showWhen: noteBlockShowWen,
+      handler: actionToHandler('makeShorter'),
+    },
+  ],
+};
+
+export const draftGroup: AIItemGroupConfig = {
+  name: 'draft',
+  items: [
+    {
+      name: 'Write an article about this',
+      icon: AIPenIcon,
+      showWhen: noteBlockShowWen,
+      handler: actionToHandler('writeArticle'),
+    },
+    {
+      name: 'Write a tweet about this',
+      icon: AIPenIcon,
+      showWhen: noteBlockShowWen,
+      handler: actionToHandler('writeTweet'),
+    },
+    {
+      name: 'Write a poem about this',
+      icon: AIPenIcon,
+      showWhen: noteBlockShowWen,
+      handler: actionToHandler('writePoem'),
+    },
+    {
+      name: 'Write a blog post about this',
+      icon: AIPenIcon,
+      showWhen: noteBlockShowWen,
+      handler: actionToHandler('writeBlog'),
+    },
+    {
+      name: 'Write a outline from this',
+      icon: AIPenIcon,
+      showWhen: noteBlockShowWen,
+      handler: actionToHandler('writeOutline'),
+    },
+    {
+      name: 'Brainstorm ideas about this',
+      icon: AIPenIcon,
+      showWhen: noteBlockShowWen,
+      handler: actionToHandler('brainstorm'),
+    },
+  ],
+};
+
+export const mindmapGroup: AIItemGroupConfig = {
+  name: 'mindmap',
+  items: [
+    {
+      name: 'Expand from this mindmap node',
+      icon: AIPenIcon,
+      showWhen: mindmapShowWhen,
+    },
+    {
+      name: 'Brainstorm ideas with Mindmap',
+      icon: AIPenIcon,
+      showWhen: noteBlockShowWen,
+      handler: actionToHandler('brainstormMindmap'),
+    },
+  ],
+};
+
+export const presentationGroup: AIItemGroupConfig = {
+  name: 'presentation',
+  items: [
+    {
+      name: 'Create a presentation',
+      icon: AIPenIcon,
+      showWhen: noteBlockShowWen,
+      handler: actionToHandler('createSlides'),
+    },
+  ],
+};
+
+export const createGroup: AIItemGroupConfig = {
+  name: 'create',
+  items: [
+    {
+      name: 'Make it real',
+      icon: AIPenIcon,
+      showWhen: noteBlockShowWen,
+      handler: actionToHandler('makeItReal'),
+    },
+  ],
 };

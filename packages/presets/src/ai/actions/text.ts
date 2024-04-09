@@ -73,6 +73,49 @@ declare global {
         options: T
       ): AIActionTextResponse<T>;
 
+      writeArticle<T extends AITextActionOptions>(
+        options: T
+      ): AIActionTextResponse<T>;
+      writeTweet<T extends AITextActionOptions>(
+        options: T
+      ): AIActionTextResponse<T>;
+      writePoem<T extends AITextActionOptions>(
+        options: T
+      ): AIActionTextResponse<T>;
+      writeBlog<T extends AITextActionOptions>(
+        options: T
+      ): AIActionTextResponse<T>;
+      writeOutline<T extends AITextActionOptions>(
+        options: T
+      ): AIActionTextResponse<T>;
+      brainstorm<T extends AITextActionOptions>(
+        options: T
+      ): AIActionTextResponse<T>;
+
+      findActions<T extends AITextActionOptions>(
+        options: T
+      ): AIActionTextResponse<T>;
+
+      // mindmap
+      brainstormMindmap<T extends AITextActionOptions>(
+        options: T
+      ): AIActionTextResponse<T>;
+
+      // make it real
+      makeItReal<T extends AITextActionOptions>(
+        options: T
+      ): AIActionTextResponse<T>;
+
+      // presentation
+      createSlides<T extends AITextActionOptions>(
+        options: T
+      ): AIActionTextResponse<T>;
+
+      // explain this
+      explain<T extends AITextActionOptions>(
+        options: T
+      ): AIActionTextResponse<T>;
+
       // actions with variants
       translate<T extends TranslateOptions>(
         options: T

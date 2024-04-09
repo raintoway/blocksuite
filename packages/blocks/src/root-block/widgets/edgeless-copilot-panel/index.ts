@@ -6,6 +6,7 @@ import { css, html, LitElement } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 
 import type { AIItemGroupConfig } from '../../../_common/components/ai-item/types.js';
+import { on, stopPropagation } from '../../../_common/utils/event.js';
 import type { EdgelessRootBlockComponent } from '../../edgeless/edgeless-root-block.js';
 
 @customElement('edgeless-copilot-panel')
@@ -37,6 +38,11 @@ export class EdgelessCopilotPanel extends WithDisposable(LitElement) {
 
   private _getChain() {
     return this.edgeless.service.std.command.chain();
+  }
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    this._disposables.add(on(this, 'wheel', stopPropagation));
   }
 
   hide() {
