@@ -73,6 +73,10 @@ export function getAISpecs() {
         },
         setup(slots) {
           slots.widgetConnected.on(view => {
+            if (view.component instanceof AffineAIPanelWidget) {
+              view.component.config = buildAIPanelConfig(view.component);
+            }
+
             if (view.component instanceof EdgelessCopilotWidget) {
               setupEdgelessCopilot(view.component);
             }
