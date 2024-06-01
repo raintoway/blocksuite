@@ -27,6 +27,12 @@ export async function mountDefaultDocEditor(collection: DocCollection) {
 
   const editor = new AffineEditorContainer();
   const specs = getExampleSpecs();
+
+  collection.store.awarenessStore.awareness.setLocalStateField('userV2', {
+    name: '1',
+    id: '1',
+  });
+
   editor.pageSpecs = [...specs.pageModeSpecs].map(spec => {
     if (spec.schema.model.flavour === 'affine:page') {
       spec = patchPageRootSpec(

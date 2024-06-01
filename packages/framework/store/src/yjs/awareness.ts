@@ -9,6 +9,11 @@ export interface UserInfo {
   name: string;
 }
 
+export interface UserInfoV2 {
+  name: string;
+  id: string;
+}
+
 type UserSelection = Array<Record<string, unknown>>;
 
 // Raw JSON state in awareness CRDT
@@ -16,6 +21,7 @@ export type RawAwarenessState<
   Flags extends Record<string, unknown> = BlockSuiteFlags,
 > = {
   user?: UserInfo;
+  userV2?: UserInfoV2;
   color?: string;
   flags: Flags;
   // use v2 to avoid crush on old clients

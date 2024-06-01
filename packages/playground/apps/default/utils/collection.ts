@@ -54,6 +54,8 @@ export async function createDefaultDocCollection() {
           new BroadcastChannelAwarenessSource('quickEdgeless'),
         ];
       });
+  } else {
+    awarenessSources = [new BroadcastChannelAwarenessSource('quickEdgeless')];
   }
 
   const options: DocCollectionOptions = {

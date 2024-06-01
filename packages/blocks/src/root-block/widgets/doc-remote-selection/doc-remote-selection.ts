@@ -5,7 +5,7 @@ import {
 } from '@blocksuite/block-std';
 import { WidgetElement } from '@blocksuite/block-std';
 import { assertExists, throttle } from '@blocksuite/global/utils';
-import { type UserInfo } from '@blocksuite/store';
+import { type UserInfo, type UserInfoV2 } from '@blocksuite/store';
 import { css, html, nothing } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { styleMap } from 'lit/directives/style-map.js';
@@ -39,6 +39,7 @@ export class AffineDocRemoteSelectionWidget extends WidgetElement {
     id: number;
     selections: BaseSelection[];
     user?: UserInfo;
+    userV2?: UserInfoV2;
   }> = [];
 
   private get _selectionManager() {
@@ -72,6 +73,7 @@ export class AffineDocRemoteSelectionWidget extends WidgetElement {
                 id,
                 selections,
                 user: status.get(id)?.user,
+                userV2: status.get(id)?.userV2,
               };
             }
           );
@@ -247,6 +249,7 @@ export class AffineDocRemoteSelectionWidget extends WidgetElement {
       selections: BaseSelection[];
       rects: SelectionRect[];
       user?: UserInfo;
+      userV2?: UserInfoV2;
     }> = this._remoteSelections.flatMap(({ selections, id, user }) => {
       if (remoteUsers.has(id)) {
         return [];
@@ -259,6 +262,7 @@ export class AffineDocRemoteSelectionWidget extends WidgetElement {
         selections,
         rects: this._getSelectionRect(selections),
         user,
+        userV2,
       };
     });
 
@@ -306,10 +310,10 @@ export class AffineDocRemoteSelectionWidget extends WidgetElement {
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
-                      display: selection.user ? 'block' : 'none',
+                      display: selection.userV2 ? 'block' : 'none',
                     })}"
                   >
-                    ${selection.user?.name}
+                    ${selection.userV2?.name}
                   </div>
                 </div>
               </div>
