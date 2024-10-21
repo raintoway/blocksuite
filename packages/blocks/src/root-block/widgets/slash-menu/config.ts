@@ -65,6 +65,7 @@ import { type SlashMenuTooltip, slashMenuToolTips } from './tooltips/index.js';
 import {
   createConversionItem,
   createDatabaseBlockInNextLine,
+  createMicrosheetBlockInNextLine,
   formatDate,
   formatTime,
   insertContent,
@@ -723,6 +724,33 @@ export const defaultSlashMenuConfig: SlashMenuConfig = {
 
     // ---------------------------------------------------------
     { groupName: 'Database' },
+    {
+      name: 'Table',
+      description: 'Display items in a table format.',
+      alias: ['table'],
+      icon: DatabaseTableViewIcon20,
+      tooltip: slashMenuToolTips['Table'],
+      showWhen: ({ model }) =>
+        model.doc.schema.flavourSchemaMap.has('affine:microsheet') &&
+        !insideDatabase(model) &&
+        !insideEdgelessText(model),
+      action: ({ rootComponent, model }) => {
+        const id = createMicrosheetBlockInNextLine(model);
+        if (!id) {
+          return;
+        }
+        const service = rootComponent.std.getService('affine:microsheet');
+        if (!service) return;
+        service.initMicrosheetBlock(
+          rootComponent.doc,
+          model,
+          id,
+          viewPresets.tableViewMeta.type,
+          false
+        );
+        tryRemoveEmptyLine(model);
+      },
+    },
     {
       name: 'Table View',
       description: 'Display items in a table format.',
