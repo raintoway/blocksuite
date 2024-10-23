@@ -16,14 +16,10 @@ import { effects as widgetScrollAnchoringEffects } from '@blocksuite/affine-widg
 import { effects as stdEffects } from '@blocksuite/block-std/effects';
 import { effects as dataViewEffects } from '@blocksuite/data-view/effects';
 import { effects as inlineEffects } from '@blocksuite/inline/effects';
+import { effects as microsheetDataViewEffects } from '@blocksuite/microsheet-data-view/effects';
 
 import type { insertBookmarkCommand } from './bookmark-block/commands/insert-bookmark.js';
 import type { insertEdgelessTextCommand } from './edgeless-text-block/commands/insert-edgeless-text.js';
-import type {
-  MicrosheetBlockComponent,
-  MicrosheetBlockService,
-  type MicrosheetBlockService,
-} from './microsheet-block/index.js';
 import type { updateBlockType } from './note-block/commands/block-type.js';
 import type { dedentBlock } from './note-block/commands/dedent-block.js';
 import type { dedentBlockToRoot } from './note-block/commands/dedent-block-to-root.js';
@@ -66,6 +62,10 @@ import {
   BookmarkBlockComponent,
   type BookmarkBlockService,
 } from './bookmark-block/index.js';
+import {
+  CellBlockComponent,
+  type CellBlockService,
+} from './cell-block/index.js';
 import { AffineCodeUnit } from './code-block/highlight/affine-code-unit.js';
 import {
   CodeBlockComponent,
@@ -108,6 +108,10 @@ import {
   ImageEdgelessBlockComponent,
 } from './image-block/index.js';
 import { LatexBlockComponent } from './latex-block/index.js';
+import {
+  MicrosheetBlockComponent,
+  type MicrosheetBlockService,
+} from './microsheet-block/index.js';
 import {
   EdgelessNoteBlockComponent,
   EdgelessNoteMask,
@@ -287,6 +291,7 @@ import {
   AFFINE_VIEWPORT_OVERLAY_WIDGET,
   AffineViewportOverlayWidget,
 } from './root-block/widgets/viewport-overlay/viewport-overlay.js';
+import { RowBlockComponent, type RowBlockService } from './row-block/index.js';
 import {
   MindmapRootBlock,
   MindmapSurfaceBlock,
@@ -311,6 +316,7 @@ export function effects() {
   blockEmbedEffects();
   blockSurfaceEffects();
   dataViewEffects();
+  microsheetDataViewEffects();
 
   componentCaptionEffects();
   componentContextMenuEffects();
@@ -391,6 +397,8 @@ export function effects() {
   customElements.define('affine-custom-modal', AffineCustomModal);
   customElements.define('affine-database', DatabaseBlockComponent);
   customElements.define('affine-microsheet', MicrosheetBlockComponent);
+  customElements.define('affine-row', RowBlockComponent);
+  customElements.define('affine-cell', CellBlockComponent);
   customElements.define('affine-surface-ref', SurfaceRefBlockComponent);
   customElements.define('pie-node-child', PieNodeChild);
   customElements.define('pie-node-content', PieNodeContent);
@@ -700,6 +708,8 @@ declare global {
       'affine:bookmark': BookmarkBlockService;
       'affine:database': DatabaseBlockService;
       'affine:microsheet': MicrosheetBlockService;
+      'affine:row': RowBlockService;
+      'affine:cell': CellBlockService;
       'affine:image': ImageBlockService;
       'affine:surface-ref': SurfaceRefBlockService;
     }
